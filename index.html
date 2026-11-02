@@ -1,0 +1,1190 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>pluva iON 3D 자동조향 체험</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&family=Poppins:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+/* Layout: 박람회 가로 화면. 왼쪽 = 실제 밭 3D(추적 카메라), 오른쪽 = pluva iON 태블릿(960×600 기준 화면을 비율 그대로 축소). 단일 밝은 테마로 고정. */
+:root{
+  color-scheme:light;
+  --bg:#E4E9DE; --panel:#FFFFFF; --ink:#18211C; --muted:#56645B; --line:#CDD5C8;
+  --accent:#2C6A4D; --accent-ink:#FFFFFF; --signal:#E07B24; --ion-green:#3DDC6A;
+  --font:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.5;overflow:hidden;word-break:keep-all;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+:focus-visible{outline:3px solid var(--signal);outline-offset:2px}
+h1,h2,h3,p{margin:0}
+h1,h2{text-wrap:balance}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:center;padding-block:16px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+
+/* 메인 3D */
+.world{position:relative;height:100%;border-radius:18px;overflow:hidden;background:#BCD3E6;min-height:0}
+.world canvas{display:block;width:100%;height:100%}
+.hud{position:absolute;left:14px;right:14px;top:14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;pointer-events:none}
+.pill{background:rgba(255,255,255,.93);color:var(--ink);border-radius:999px;padding:6px 14px;font-weight:600;font-size:15px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.pill.dark{background:rgba(21,25,24,.88);color:#fff}
+.pill.signal{background:var(--signal);color:#fff}
+.stats{display:flex;gap:8px;flex-wrap:wrap}
+.stats .pill{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.foot{position:absolute;left:14px;bottom:14px;max-width:max(160px, calc(100% - 360px));pointer-events:none}
+.foot .pill{display:block;border-radius:12px;font-weight:500;font-size:14.5px}
+.controls{position:absolute;right:max(14px, env(safe-area-inset-right, 0px));bottom:14px;display:flex;align-items:flex-end;gap:14px}
+.controls[hidden]{display:none}
+.pedals{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+.pedal{width:74px;height:62px;border-radius:14px;background:rgba(21,25,24,.86);color:#fff;font-size:15px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.15;touch-action:none;box-shadow:0 3px 10px rgba(0,0,0,.3)}
+.pedal b{font-size:20px}
+.pedal.on{background:var(--signal)}
+.spd{background:rgba(255,255,255,.94);border-radius:10px;padding:4px 8px;text-align:center;font-family:var(--mono);font-weight:600;font-size:16px;font-variant-numeric:tabular-nums}
+.spd small{display:block;font-family:var(--font);font-size:11px;color:var(--muted);font-weight:500}
+.pedals[hidden]{display:none}
+.wheel-wrap{display:flex;flex-direction:column;align-items:center;gap:6px}
+.finish{pointer-events:auto;background:#fff;color:var(--ink);border-radius:999px;padding:6px 14px;font-weight:700;font-size:14.5px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.finish[hidden]{display:none}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.pick{display:flex;flex-direction:column;gap:6px;text-align:left;padding:18px;border-radius:14px;border:2px solid var(--line);background:var(--panel);transition:border-color .15s, transform .15s}
+.pick:hover,.pick:focus-visible{border-color:var(--accent);transform:translateY(-2px)}
+.pick b{font-size:20px}
+.pick span{font-size:14.5px;color:var(--muted)}
+.pick .ico{height:64px;border-radius:10px;background:var(--bg);display:grid;place-items:center}
+.pick .ico svg{height:46px}
+.keys{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 18px;font-size:15.5px;color:var(--muted)}
+.keys div{display:flex;gap:10px;align-items:center}
+.wheel{width:clamp(150px,22vmin,210px);aspect-ratio:1;border-radius:50%;touch-action:none;cursor:grab;filter:drop-shadow(0 6px 12px rgba(0,0,0,.35));will-change:transform}
+.wheel:active{cursor:grabbing}
+.wheel svg{width:100%;height:100%;display:block}
+.wheel-wrap.auto .wheel{cursor:default}
+.wheel-hint{background:rgba(21,25,24,.86);color:#fff;font-size:13.5px;font-weight:600;padding:4px 12px;border-radius:999px}
+.wheel-wrap.auto .wheel-hint{background:var(--accent)}
+
+/* 태블릿 */
+.tablet-col{display:flex;flex-direction:column;gap:8px;min-width:0}
+.bezel{background:#111314;border-radius:26px;padding:16px;box-shadow:0 14px 34px rgba(15,25,20,.3), inset 0 0 0 2px #2b2f31}
+.tb-frame{position:relative;width:100%;aspect-ratio:16/10;overflow:hidden;border-radius:8px;background:#000}
+.tb{position:absolute;left:0;top:0;width:960px;height:600px;transform-origin:0 0;font-family:"Pretendard",var(--font);color:#111}
+.tb-left{position:absolute;left:0;top:0;width:320px;height:540px;background:#D8D8D8;overflow:hidden}
+.tb-left canvas{position:absolute;inset:0;width:320px;height:540px}
+.tb-info{position:absolute;left:0;right:0;top:0;height:150px;background:linear-gradient(#fff 0, #fff 58%, rgba(255,255,255,0));padding:12px 18px 0}
+.tb-mode{font-size:14px;color:#555}
+.tb-row{display:flex;justify-content:space-between;align-items:flex-end}
+.tb-speed{font-size:54px;font-weight:700;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+.tb-speed small{font-size:15px;font-weight:500;margin-left:6px;letter-spacing:0;color:#333}
+.tb-meta{text-align:right;line-height:1.15;font-variant-numeric:tabular-nums}
+.tb-meta b{font-size:22px;font-weight:700}
+.tb-meta small{font-size:13px;color:#444;margin-left:3px}
+.tb-xte{position:absolute;left:0;right:0;top:118px;display:flex;flex-direction:column;align-items:center;gap:0}
+.tb-xte .ticks{display:flex;gap:6px}
+.tb-xte .ticks i{width:14px;height:2px;background:#bbb;display:block}
+.tb-xte .ticks i.c{background:#111;height:3px;width:18px}
+.tb-xte span{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.tb-h{position:absolute;left:20px;bottom:18px;width:40px;height:40px;background:#fff;border-radius:6px;display:grid;place-items:center;box-shadow:0 1px 3px rgba(0,0,0,.15);color:#555;font-size:18px}
+.tb-map{position:absolute;left:320px;top:0;width:640px;height:540px;overflow:hidden;background:#1d2b1d}
+.tb-map canvas{position:absolute;inset:0;width:640px;height:540px}
+.tb-status{position:absolute;left:14px;right:16px;top:10px;display:flex;justify-content:space-between;color:#fff;font-size:15px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.6);pointer-events:none}
+.tb-status .r{display:flex;gap:14px}
+.tb-tools{position:absolute;right:22px;top:50px;display:flex;flex-direction:column;gap:14px}
+.tb-tool{width:60px;height:60px;border-radius:6px;background:rgba(235,235,235,.92);display:grid;place-items:center;color:#333;font-weight:700;font-size:12px}
+.tb-tool svg{width:30px;height:30px}
+.tb-act{position:absolute;right:22px;bottom:22px;width:76px;height:76px;border-radius:8px;background:#fff;color:#111;display:grid;place-items:center;font-size:44px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.tb-act[hidden]{display:none}
+.tb-act.dark{background:#111;color:#fff}
+.tb-act.green{background:var(--ion-green);color:#fff}
+.tb-act.pulse{animation:pulse 1.3s ease-in-out infinite}
+.tb-act svg{width:46px;height:46px}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(224,123,36,0)}50%{box-shadow:0 0 0 10px rgba(224,123,36,.55)}}
+.tb-toast{pointer-events:none;position:absolute;left:14px;top:46px;max-width:430px;background:rgba(20,20,20,.86);color:#fff;font-size:16px;padding:10px 16px;border-radius:6px}
+.tb-toast:empty{display:none}
+.tb-progress{position:absolute;left:14px;bottom:22px;background:rgba(255,255,255,.95);border-radius:6px;padding:8px 14px;min-width:150px}
+.tb-progress[hidden]{display:none}
+.tb-progress small{font-size:12px;color:#666;display:block}
+.tb-progress b{font-size:22px;font-variant-numeric:tabular-nums}
+.tb-panel{position:absolute;right:22px;top:66px;width:262px;background:#141516;color:#fff;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:12px;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.tb-panel[hidden]{display:none}
+.tb-panel .x{position:absolute;right:10px;top:6px;font-size:22px;color:#aaa}
+.tp-row{display:flex;justify-content:space-between;align-items:center;background:#2a2c2e;border-radius:6px;padding:10px 12px;font-size:15px}
+.toggle{width:52px;height:28px;border-radius:14px;background:#555;position:relative;transition:background .15s}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .15s}
+.toggle[aria-pressed="true"]{background:#2F5BEA}
+.toggle[aria-pressed="true"]::after{transform:translateX(24px)}
+.tp-h{font-size:16px;font-weight:700}
+.tp-p{font-size:12.5px;color:#bbb;margin-top:-8px}
+.tp-pm{display:grid;grid-template-columns:52px 1fr 52px;gap:8px;align-items:center}
+.tp-pm button{height:46px;border-radius:6px;background:#2a2c2e;font-size:24px;color:#fff}
+.tp-pm output{text-align:center;font-size:30px;font-weight:600;font-variant-numeric:tabular-nums}
+.tp-pm output small{font-size:13px;margin-left:3px;color:#ccc}
+.tp-next{height:46px;border-radius:6px;background:#fff;color:#111;font-weight:700;font-size:16px}
+.tp-next:disabled{opacity:.4;cursor:default}
+.tp-warn{font-size:12.5px;color:#f2b36b}
+.tp-warn:empty{display:none}
+.tb-nav{position:absolute;left:0;right:0;bottom:0;height:60px;background:#000;display:flex;align-items:center;padding:0 22px;gap:34px;color:#fff}
+.tb-nav svg{width:24px;height:24px;opacity:.95}
+.tb-nav .sp{flex:1}
+.tb-nav .mid{display:flex;gap:30px;margin-left:120px}
+.tb-nav .mid svg{opacity:.6}
+.tb-nav .mid svg.on{opacity:1}
+.tb-note{font-size:12.5px;color:var(--muted);text-align:center}
+
+/* 모달 */
+.overlay{position:fixed;inset:0;z-index:30;display:grid;place-items:center;background:rgba(16,24,19,.5);padding:16px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.overlay[hidden]{display:none}
+.modal{background:var(--panel);border-radius:20px;padding:28px;width:min(880px,100%);max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:18px;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.modal > *{flex-shrink:0}
+.eyebrow{font-family:var(--mono);font-size:14px;letter-spacing:.06em;color:var(--accent);font-weight:600}
+.modal h1{font-size:clamp(28px,4vw,40px);font-weight:700;line-height:1.2}
+.modal h2{font-size:clamp(22px,3vw,30px);font-weight:700;line-height:1.25}
+.lead{font-size:18px;color:var(--muted);max-width:62ch}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:16px 26px;border-radius:12px;font-weight:700;font-size:18px;background:var(--panel);border:2px solid var(--line);text-decoration:none;color:var(--ink);min-height:58px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap}
+.btn-row .btn{flex:1 1 220px}
+.how{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:16px;color:var(--muted)}
+.how kbd{font-family:var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--ink)}
+.key{display:inline-grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#151918;color:#fff;font-size:18px}
+.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0;padding:0;list-style:none;counter-reset:s}
+.steps li{background:var(--bg);border-radius:12px;padding:12px 14px;font-size:15px;counter-increment:s}
+.steps li::before{content:counter(s);display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;margin-right:6px}
+.scores{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.score{background:var(--bg);border-radius:12px;padding:14px}
+.score small{display:block;color:var(--muted);font-size:14px}
+.score b{font-family:var(--mono);font-size:28px;font-variant-numeric:tabular-nums}
+.compare{display:flex;flex-direction:column;gap:10px}
+.cmp{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;align-items:center}
+.cmp h3{font-size:16px}
+.cmp canvas{width:100%;aspect-ratio:50/16;border-radius:8px;display:block;background:#2a3a2a}
+table.res{width:100%;border-collapse:collapse;font-size:16px}
+table.res th,table.res td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+table.res th:first-child,table.res td:first-child{text-align:left;color:var(--muted);font-weight:500}
+table.res thead th{font-size:14px;color:var(--muted);font-weight:600}
+table.res td{font-family:var(--mono);font-weight:600}
+table.res td.ion{color:var(--accent)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+.fine{font-size:13.5px;color:var(--muted)}
+.countdown{font-size:14px;color:var(--muted);text-align:center}
+
+@media (max-width:900px), (orientation:portrait){
+  body{overflow:auto}
+  .app{height:auto;grid-template-columns:1fr}
+  .world{height:auto;aspect-ratio:16/10}
+  .scores,.steps{grid-template-columns:1fr 1fr}
+  .cmp{grid-template-columns:1fr}
+  .wheel{width:120px}
+  .pedal{width:62px;height:54px}
+  .cards,.keys{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+
+/* ===== 디자인: pluva 마켓 톤 (밝은 회색 바탕 · 흰 카드 · 파란 강조 · 굵은 고딕) ===== */
+:root{
+  color-scheme:light;
+  --bg:#F2F3F6; --panel:#FFFFFF; --ink:#191F28; --muted:#6B7684; --line:#E5E8EB;
+  --blue:#1E6BFF; --blue-soft:#EAF2FF; --accent:#1E6BFF; --accent-ink:#FFFFFF; --signal:#1E6BFF; --gray-btn:#D9DCE1;
+  --font:"Noto Sans KR","Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --num:"Noto Sans KR","Pretendard",system-ui,sans-serif;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);letter-spacing:-.02em;display:flex;flex-direction:column}
+.topbar{flex:none;height:52px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding-left:max(18px, env(safe-area-inset-left, 0px));padding-right:max(18px, env(safe-area-inset-right, 0px))}
+.topbar .logo{display:flex;align-items:center;gap:6px;font-weight:800;font-size:20px;letter-spacing:-.03em;color:var(--ink)}
+.topbar .logo svg{height:18px}
+.topbar .div{width:1px;height:16px;background:var(--line)}
+.topbar .sub{font-size:14px;color:#4E5968;font-weight:500}
+.app{flex:1;min-height:0;height:auto;padding-block:18px}
+.world{border-radius:20px;background:#fff;border:1px solid var(--line)}
+.world canvas{border-radius:20px}
+.pill,.pill.dark{background:#fff;color:var(--ink);border-radius:10px;box-shadow:0 2px 8px rgba(25,31,40,.08);font-weight:700;border:0}
+.pill.signal{background:var(--blue);color:#fff}
+.stats .pill{font-family:var(--font);font-weight:600}
+.foot .pill{border-radius:12px;font-weight:500;color:#333D4B}
+.finish{background:#fff;color:var(--blue);border:0;border-radius:10px;box-shadow:0 2px 8px rgba(25,31,40,.08);font-weight:700}
+.pedal{background:#fff;color:var(--ink);border:0;border-radius:14px;box-shadow:0 2px 10px rgba(25,31,40,.12);font-weight:700}
+.pedal.on{background:var(--blue);color:#fff}
+.spd{background:#fff;color:var(--ink);border-radius:12px;border:0;box-shadow:0 2px 10px rgba(25,31,40,.1);font-family:var(--font);font-weight:800}
+.spd small{color:var(--muted)}
+.wheel-hint{border-radius:10px;background:#fff;color:var(--ink);font-weight:700;box-shadow:0 2px 8px rgba(25,31,40,.1)}
+.wheel-wrap.auto .wheel-hint{background:var(--blue);color:#fff}
+.bezel{background:#16181B;border-radius:24px;box-shadow:0 10px 30px rgba(25,31,40,.18);border:0}
+.tb-note{color:#8B95A1}
+.overlay{background:rgba(25,31,40,.42)}
+.modal{background:#fff;color:var(--ink);border:0;border-radius:24px;box-shadow:0 20px 50px rgba(25,31,40,.18)}
+.eyebrow{font-family:var(--font);font-size:14.5px;letter-spacing:0;color:var(--blue);font-weight:700}
+.modal h1,.modal h2{color:var(--ink);font-weight:800;letter-spacing:-.035em}
+.modal h1 em,.modal h2 em{font-style:normal;color:var(--blue)}
+.lead{color:#4E5968}
+.btn{background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:14px;font-weight:700}
+.btn.primary{background:var(--blue);border:0;color:#fff}
+.btn:disabled{background:var(--gray-btn);color:#fff;border:0}
+.pick{background:#fff;border:1px solid var(--line);border-radius:16px;align-items:center;text-align:center;padding:22px 16px}
+.pick:hover,.pick:focus-visible{border-color:var(--blue);transform:none;box-shadow:0 0 0 1px var(--blue)}
+.pick b{color:var(--ink);font-size:21px;font-weight:800}
+.pick .ico{width:84px;height:84px;border-radius:50%;background:#F2F4F6;margin-bottom:6px}
+.pick .ico svg{height:44px}
+.pick span{color:var(--muted)}
+.qno{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;background:var(--blue-soft);color:var(--blue);font-size:12.5px;font-weight:800;margin-right:8px;vertical-align:2px}
+.keys{color:#4E5968}
+.key{background:#F2F4F6;color:var(--ink);border:1px solid var(--line);border-radius:8px;font-weight:800}
+.how kbd{background:#F2F4F6;border-color:var(--line);color:var(--ink)}
+.steps li{background:#F9FAFB;border:1px solid var(--line);border-radius:12px;color:#333D4B;font-weight:500}
+.steps li::before{background:var(--blue-soft);color:var(--blue);border-radius:6px;font-weight:800}
+.scores{gap:10px;border:0}
+.score{background:#F9FAFB;border:1px solid var(--line);border-radius:14px;padding:16px;text-align:left}
+.score:not(:nth-child(3n+1)){border-left:1px solid var(--line)}
+.score small{color:var(--muted);font-size:13.5px}
+.score b{font-family:var(--font);font-size:26px;font-weight:800;color:var(--blue);background:none;-webkit-background-clip:initial;background-clip:initial}
+table.res th,table.res td{border-bottom-color:var(--line)}
+table.res td{font-family:var(--font);color:var(--ink);font-weight:700}
+table.res td.ion{color:var(--blue);background:none;-webkit-background-clip:initial;background-clip:initial;font-weight:800}
+.cmp h3{color:var(--ink)}
+.cmp canvas{background:#F2F4F6;border-radius:10px}
+.legend,.fine,.countdown{color:var(--muted)}
+.tb-act.wide{width:auto;padding:0 26px;font-size:22px;font-weight:800;background:#1E6BFF;color:#fff}
+.tb-act.wide:disabled{background:#9AA3AE}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(30,107,255,0)}50%{box-shadow:0 0 0 10px rgba(30,107,255,.45)}}
+@media (max-width:900px), (orientation:portrait){ body{display:block} .app{height:auto} .score:not(:nth-child(3n+1)){border-left:1px solid var(--line)} }
+</style>
+<style>body{margin:0}</style>
+</head>
+<body>
+
+<header class="topbar"><span class="logo"><svg viewBox="0 0 28 18" aria-hidden="true"><path d="M5 17L11 1h3L8 17zM12 17L18 1h3l-6 16zM19 17L25 1h3l-6 16z" fill="#1E6BFF"/></svg>pluva iON</span><span class="div"></span><span class="sub">자동조향 체험</span></header>
+<div class="app">
+  <section class="world" id="world" aria-label="밭 3D 화면">
+    <canvas id="mainC"></canvas>
+    <div class="hud"><span class="pill dark" id="hudRound">pluva iON 자동조향 체험</span><div class="stats"><span id="hudStats" class="stats"></span><button type="button" class="finish" id="finishBtn" data-act="finish" hidden>작업 끝내기</button></div></div>
+    <div class="foot" id="foot"></div>
+    <div class="controls" id="controls" hidden>
+    <div class="pedals">
+      <div class="spd"><span id="spdV">0.0</span><small>km/h</small></div>
+      <button type="button" class="pedal" id="pedUp" aria-label="전진·가속"><b>▲</b>가속</button>
+      <button type="button" class="pedal" id="pedDn" aria-label="감속·후진"><b>▼</b>감속·후진</button>
+    </div>
+    <div class="wheel-wrap" id="wheelWrap">
+      <div class="wheel" id="wheel" role="slider" tabindex="0" aria-label="핸들" aria-valuemin="-270" aria-valuemax="270" aria-valuenow="0">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <defs><radialGradient id="rimG" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="#3a3f42"/><stop offset="1" stop-color="#16191a"/></radialGradient></defs>
+          <circle cx="100" cy="100" r="86" fill="none" stroke="url(#rimG)" stroke-width="22"/>
+          <circle cx="100" cy="100" r="86" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="2"/>
+          <path d="M100 100 L22 112 M100 100 L178 112 M100 100 L100 182" stroke="#24282a" stroke-width="16" stroke-linecap="round"/>
+          <circle cx="100" cy="100" r="30" fill="#24282a" stroke="#3b4043" stroke-width="3"/>
+          <text x="100" y="105" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="13" font-weight="600" fill="#e8ece9">pluva</text>
+          <rect x="94" y="8" width="12" height="18" rx="3" fill="#1E6BFF"/>
+        </svg>
+      </div>
+      <span class="wheel-hint" id="wheelHint">핸들을 잡고 돌리세요</span>
+    </div>
+    </div>
+  </section>
+
+  <aside class="tablet-col" aria-label="pluva iON 태블릿 화면">
+    <div class="bezel"><div class="tb-frame" id="tbFrame">
+      <div class="tb" id="tb">
+        <div class="tb-left">
+          <canvas id="ionC"></canvas>
+          <div class="tb-info">
+            <div class="tb-mode" id="tbMode">수동 주행</div>
+            <div class="tb-row"><div class="tb-speed"><span id="tbSpeed">0.0</span><small>km/h</small></div>
+              <div class="tb-meta"><div><b id="tbMin">0</b><small>분</small></div><div><b id="tbArea">0</b><small>m²</small></div></div></div>
+          </div>
+          <div class="tb-xte" id="tbXte"><div class="ticks"><i></i><i></i><i></i><i></i><i class="c"></i><i></i><i></i><i></i><i></i></div><span id="tbXteV">-</span></div>
+          <div class="tb-h" aria-hidden="true">⊢⊣</div>
+        </div>
+        <div class="tb-map">
+          <canvas id="mapC"></canvas>
+          <div class="tb-status"><span><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19" r="1" fill="#fff"/></svg></span><span class="r"><span>|||</span><span id="tbClock">13:40</span></span></div>
+          <div class="tb-tools" aria-hidden="true">
+            <div class="tb-tool"><svg viewBox="0 0 24 24"><path d="M12 3l6 17-6-4-6 4z" fill="#222"/></svg></div>
+            <div class="tb-tool"><svg viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2"><path d="M6 19c-2 0-3-1-3-3s1-3 3-3h12c2 0 3-1 3-3s-1-3-3-3H8"/><circle cx="6" cy="19" r="1.6"/><circle cx="8" cy="7" r="1.6"/></svg></div>
+          </div>
+          <div class="tb-toast" id="tbToast"></div>
+          <div class="tb-progress" id="tbProgress" hidden><small>작업률</small><b id="tbPct">0 %</b></div>
+          <div class="tb-panel" id="tbPanel" hidden>
+            <button type="button" class="x" data-act="panelClose" aria-label="닫기">×</button>
+            <div class="tp-row"><span>유턴</span><button type="button" class="toggle" id="uToggle" data-act="uToggle" aria-pressed="true" aria-label="유턴 켜기"></button></div>
+            <p class="tp-h">유턴라인 위치조정</p>
+            <p class="tp-p">유턴하는 라인의 위치를 조정합니다.</p>
+            <div class="tp-pm"><button type="button" data-act="uMinus" aria-label="줄이기">−</button><output id="uOff">0<small>m</small></output><button type="button" data-act="uPlus" aria-label="늘리기">+</button></div>
+            <p class="tp-warn" id="uWarn"></p>
+            <button type="button" class="tp-next" id="uNext" data-act="uNext">다음</button>
+          </div>
+          <button type="button" class="tb-act" id="tbAct" data-act="tbAct" hidden></button>
+        </div>
+        <nav class="tb-nav" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="#fff"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+          <div class="mid">
+            <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 3l9 8h-3v9h-4v-6h-4v6H6v-9H3z"/></svg>
+            <svg viewBox="0 0 24 24" fill="#fff" class="on"><circle cx="7" cy="17" r="4"/><circle cx="18" cy="18" r="3"/><path d="M5 11V6h7l2 5h5v4h-3a3 3 0 0 0-3 0h-2a5 5 0 0 0-6-4z"/></svg>
+            <svg viewBox="0 0 24 24" fill="#fff"><path d="M5 4h14l-3 8h-8zM10 12h4v5h3v3H7v-3h3z"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 16l3-8 3 8M10 13h4"/></svg>
+            <svg viewBox="0 0 24 24" fill="#fff"><rect x="5" y="4" width="2.5" height="16"/><rect x="10.75" y="4" width="2.5" height="16"/><rect x="16.5" y="4" width="2.5" height="16"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M3.5 10h17M12 14v7"/></svg>
+            <svg viewBox="0 0 24 24" fill="#fff"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="M10 9l5 3-5 3z" fill="#000"/></svg>
+          </div>
+          <span class="sp"></span>
+          <svg viewBox="0 0 24 24" fill="#fff"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M17 10l5-3v10l-5-3z"/></svg>
+        </nav>
+      </div>
+    </div></div>
+    <p class="tb-note">체험용으로 재구성한 화면입니다. 실제 pluva iON 화면과 기능 구성은 다를 수 있습니다.</p>
+  </aside>
+</div>
+
+<div class="overlay" id="overlay"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+
+<script>
+/* =====================================================================
+   설정: 농기계·작업 (항목 추가·수정은 여기서)
+   ===================================================================== */
+const MACHINES = {
+  tractor: { label:'트랙터', wb:2.73, camDist:11, camH:5.4, tasks:['rotary','ridge','mulch'] },
+  rice:    { label:'이앙기', wb:1.6,  camDist:7.6, camH:4.0, tasks:['plant'] },
+};
+const TASKS = {
+  rotary:{ machine:'tractor', label:'로터리 경운', desc:'흙을 잘게 부수고 평평하게 갈아줍니다.', implLabel:'로터리', w:3.2, back:2.75 },
+  ridge: { machine:'tractor', label:'골 작업 (두둑·고랑)', desc:'두둑을 세우고 고랑을 냅니다.', implLabel:'두둑성형기', w:3.0, back:2.95 },
+  mulch: { machine:'tractor', label:'비닐 피복', desc:'두둑 위에 비닐을 덮습니다.', implLabel:'피복기', w:2.6, back:3.0 },
+  plant: { machine:'rice',    label:'이앙 (모내기)', desc:'논에 모를 줄 맞춰 심습니다.', implLabel:'8조 식부 장치', w:2.4, back:1.95 },
+};
+const LANES = 4, FIELD_L = 50, RES = 0.2, SOIL_RES = 0.05;
+const TIME_SCALE = 4;                       // 게임 속 1초 = 실제 4초로 환산
+const VMAX = 6, VREV = -2.5, ACC = 2.6, BRK = 3.6;   // 게임 속 속도(m/s)
+const DMAX = 35*Math.PI/180;                // 앞바퀴 최대 조향각
+const COL = { cover:[70,214,96], over:[240,196,48], miss:[214,64,52] };   // 태블릿 작업 자국(앱과 같은 초록)
+const RES_COVER = [30,107,255];                                          // 결과 화면용 스틸 블루
+const IDLE_MS = 90000, RESULT_MS = 45000;
+const CALC_URL = 'https://claude.ai/artifact/9NY1D9khwYqNpQxDSDkPC4';
+
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const wrap = a => { while (a > Math.PI) a -= 2*Math.PI; while (a < -Math.PI) a += 2*Math.PI; return a; };
+const gauss = () => { let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); };
+const pct = r => `${(r*100).toFixed(1)}%`;
+const fmtTime = s => { s = Math.round(s); const m = Math.floor(s/60); return m ? `${m}분 ${String(s%60).padStart(2,'0')}초` : `${s}초`; };
+const $ = s => document.querySelector(s);
+
+let F = null;   // 현재 밭 { W, L, w, lanes, NX, NZ, TOTAL, SX, SZ }
+const laneX = i => F.w/2 + i*F.w;
+function setField(taskId){
+  const t = TASKS[taskId], W = t.w*LANES;
+  F = { W, L:FIELD_L, w:t.w, lanes:LANES, back:t.back, NX:Math.round(W/RES), NZ:Math.round(FIELD_L/RES), SX:Math.round(W/SOIL_RES), SZ:Math.round(FIELD_L/SOIL_RES) };
+  F.TOTAL = F.NX*F.NZ;
+}
+
+/* =====================================================================
+   3D 모델
+   ===================================================================== */
+function mats(){
+  return {
+    white: new THREE.MeshStandardMaterial({ color:0xeceef0, metalness:.2, roughness:.35 }),
+    whiteD:new THREE.MeshStandardMaterial({ color:0xeceef0, metalness:.2, roughness:.35, side:THREE.DoubleSide }),
+    silver:new THREE.MeshStandardMaterial({ color:0xb8bec4, metalness:.65, roughness:.32 }),
+    dark:  new THREE.MeshStandardMaterial({ color:0x2b2e31, metalness:.35, roughness:.55 }),
+    black: new THREE.MeshStandardMaterial({ color:0x141516, roughness:.8 }),
+    rubber:new THREE.MeshStandardMaterial({ color:0x1c1d1e, roughness:.95 }),
+    glass: new THREE.MeshStandardMaterial({ color:0x18242c, metalness:.3, roughness:.05, transparent:true, opacity:.6 }),
+    lamp:  new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xfff1d0, emissiveIntensity:1.4 }),
+    red:   new THREE.MeshStandardMaterial({ color:0xc0291f, emissive:0x6a0e09 }),
+    amber: new THREE.MeshStandardMaterial({ color:0xf0a020, emissive:0x7a4a00 }),
+    steel: new THREE.MeshStandardMaterial({ color:0x45525c, metalness:.5, roughness:.45 }),
+    orange:new THREE.MeshStandardMaterial({ color:0xd8682a, metalness:.3, roughness:.5 }),
+    seed:  new THREE.MeshStandardMaterial({ color:0x5aa83c, roughness:.9 }),
+    film:  new THREE.MeshStandardMaterial({ color:0x1a1c1e, metalness:.3, roughness:.25 }),
+  };
+}
+function maker(parent){
+  const add = (geo, mat, x, y, z, p=parent) => { const m = new THREE.Mesh(geo, mat); m.position.set(x,y,z); m.castShadow = true; m.receiveShadow = true; p.add(m); return m; };
+  return {
+    add,
+    box:(w,h,d,mat,x,y,z,p) => add(new THREE.BoxGeometry(w,h,d), mat, x,y,z,p),
+    cyl:(rt,rb,h,mat,x,y,z,seg=20,p) => add(new THREE.CylinderGeometry(rt,rb,h,seg), mat, x,y,z,p),
+  };
+}
+function wheelMesh(M, r, width, lugs, rimR, paddy=false){
+  const w = new THREE.Group();
+  const tire = new THREE.Mesh(new THREE.CylinderGeometry(r*(paddy?.8:.93), r*(paddy?.8:.93), width, 40), paddy ? M.steel : M.rubber); tire.rotation.z = Math.PI/2; tire.castShadow = true; w.add(tire);
+  if (!paddy) [-1,1].forEach(s => { const t = new THREE.Mesh(new THREE.TorusGeometry(r*.84, r*.1, 10, 44), M.rubber); t.rotation.y = Math.PI/2; t.position.x = s*(width/2 - r*.06); w.add(t); });
+  const lugG = paddy ? new THREE.BoxGeometry(width*1.05, r*.26, .03) : new THREE.BoxGeometry(width*.5, r*.1, r*.17);
+  const n = paddy ? lugs : lugs*2;
+  const inst = new THREE.InstancedMesh(lugG, paddy ? M.rubber : M.rubber, n); const d = new THREE.Object3D(); let k = 0;
+  for (let i=0;i<lugs;i++){ const a = i/lugs*Math.PI*2;
+    if (paddy){ d.position.set(0, Math.cos(a)*r*.86, Math.sin(a)*r*.86); d.rotation.set(a, 0, 0); d.updateMatrix(); inst.setMatrixAt(k++, d.matrix); }
+    else [-1,1].forEach(s => { d.position.set(s*width*.24, Math.cos(a)*r*.95, Math.sin(a)*r*.95); d.rotation.set(a, s*.5, 0); d.updateMatrix(); inst.setMatrixAt(k++, d.matrix); }); }
+  inst.castShadow = true; w.add(inst);
+  [-1,1].forEach(s => {
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(rimR, rimR, .04, 28), M.silver); rim.rotation.z = Math.PI/2; rim.position.x = s*width*.42; w.add(rim);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(rimR*.38, rimR*.45, .14, 16), M.dark); hub.rotation.z = Math.PI/2; hub.position.x = s*width*.48; w.add(hub);
+  });
+  return w;
+}
+function steeringWheel(M, g, x, y, z, tilt){
+  const sw = new THREE.Mesh(new THREE.TorusGeometry(.2,.03,8,20), M.black); sw.position.set(x,y,z); sw.rotation.x = tilt; g.add(sw);
+  sw.add(new THREE.Mesh(new THREE.BoxGeometry(.38,.03,.02), M.black));
+  return sw;
+}
+function makeTractor(){
+  const g = new THREE.Group(), M = mats(), { add, box, cyl } = maker(g);
+  const wheels = { rear:[], front:[], pivots:[], rr:.92, fr:.62 };
+  [-1,1].forEach(s => { const w = wheelMesh(M,.92,.64,22,.58); w.position.set(s*1.03,.92,-.95); g.add(w); wheels.rear.push(w); });
+  [-1,1].forEach(s => { const p = new THREE.Group(); p.position.set(s*.92,.62,1.78); g.add(p); const w = wheelMesh(M,.62,.46,18,.38); p.add(w); wheels.front.push(w); wheels.pivots.push(p); });
+  box(.86,.5,3.7, M.dark, 0,.9,.45);
+  box(1.06,.95,2.15, M.white, 0,1.58,1.55); box(.94,.14,2.1, M.white, 0,2.1,1.53);
+  box(.92,.78,.06, M.black, 0,1.52,2.64); for (let i=0;i<6;i++) box(.84,.03,.07, M.dark, 0,1.24+i*.11,2.66);
+  [-1,1].forEach(s => box(.2,.1,.04, M.lamp, s*.36,1.98,2.64));
+  box(.98,.36,.42, M.dark, 0,.98,2.82); box(.2,.5,.05, M.dark, 0,.98,3.05);
+  cyl(.065,.065,1.25, M.black, .42,2.62,.78, 12); cyl(.08,.065,.12, M.dark, .42,3.26,.78, 12);
+  box(.34,.5,.6, M.dark, -.62,1.25,.35);
+  [-1,1].forEach(s => {
+    const f = new THREE.Mesh(new THREE.CylinderGeometry(1.06,1.06,.74,28,1,true,.25,2.35), M.whiteD); f.rotation.z = Math.PI/2; f.position.set(s*1.03,.92,-.95); f.castShadow = true; g.add(f);
+    box(.74,.48,.62, M.white, s*1.03,1.86,-1.62); box(.38,.12,.03, M.lamp, s*1.03,1.92,-1.94);
+    box(.14,.1,.03, M.red, s*1.26,1.72,-1.94); box(.14,.1,.03, M.amber, s*.8,1.72,-1.94);
+  });
+  box(1.56,.24,2.0, M.dark, 0,1.6,-.55);
+  [[.74,.42],[-.74,.42],[.74,-1.52],[-.74,-1.52]].forEach(([x,z]) => box(.08,1.38,.08, M.black, x,2.38,z));
+  box(1.42,1.3,.03, M.glass, 0,2.38,.44); box(1.42,1.3,.03, M.glass, 0,2.38,-1.53);
+  [-1,1].forEach(s => box(.03,1.3,1.9, M.glass, s*.75,2.38,-.55));
+  box(.5,.5,.5, M.dark, 0,2.0,-.9);
+  const sw = steeringWheel(M, g, 0,2.35,.05, -.9);
+  box(1.8,.2,2.2, M.white, 0,3.14,-.55); box(1.6,.08,1.9, M.white, 0,3.27,-.55);
+  [-.55,-.2,.2,.55].forEach(x => { box(.22,.08,.03, M.lamp, x,3.08,.56); box(.22,.08,.03, M.lamp, x,3.08,-1.66); });
+  box(.5,.05,.3, M.dark, 0,3.34,-.2); add(new THREE.CylinderGeometry(.17,.2,.1,24), M.black, 0,3.42,-.2);
+  add(new THREE.SphereGeometry(.16,20,10,0,Math.PI*2,0,Math.PI/2), M.white, 0,3.47,-.2);
+  cyl(.05,.05,.12, M.amber, -.75,3.36,-1.45, 12);
+  [-1,1].forEach(s => { box(.55,.04,.04, M.silver, s*1.02,2.98,.36); box(.06,.36,.22, M.black, s*1.3,2.82,.36); });
+  [-1,1].forEach(s => { box(.08,.08,.95, M.dark, s*.45,.62,-2.0).rotation.x = .12; });
+  box(.08,.08,.8, M.dark, 0,1.25,-1.95).rotation.x = -.35;
+  cyl(.05,.05,.6, M.silver, 0,.82,-1.95, 10).rotation.x = Math.PI/2;
+  [-.25,-.08,.08,.25].forEach(x => box(.1,.06,.03, M.lamp, x,1.32,-1.62));
+  box(1.1,.32,.18, M.dark, 0,1.12,-1.56);
+  g.userData = { wheels, sw, M, impl:null, kind:'tractor' };
+  return g;
+}
+function makeTransplanter(){
+  const g = new THREE.Group(), M = mats(), { add, box, cyl } = maker(g);
+  const wheels = { rear:[], front:[], pivots:[], rr:.56, fr:.42 };
+  [-1,1].forEach(s => { const w = wheelMesh(M,.56,.16,14,.32,true); w.position.set(s*.72,.56,-.65); g.add(w); wheels.rear.push(w); });
+  [-1,1].forEach(s => { const p = new THREE.Group(); p.position.set(s*.62,.42,.95); g.add(p); const w = wheelMesh(M,.42,.14,12,.24,true); p.add(w); wheels.front.push(w); wheels.pivots.push(p); });
+  box(.7,.3,2.1, M.dark, 0,.6,.15);                                   // 차대
+  box(.86,.62,.9, M.white, 0,1.02,1.05); box(.76,.1,.86, M.white, 0,1.37,1.03);   // 엔진 덮개
+  box(.7,.4,.05, M.black, 0,.98,1.51); [-1,1].forEach(s => box(.14,.08,.03, M.lamp, s*.26,1.22,1.52));
+  box(1.36,.07,1.15, M.dark, 0,.9,.0);                                // 발판
+  [-1,1].forEach(s => { const f = new THREE.Mesh(new THREE.CylinderGeometry(.62,.62,.22,20,1,true,.3,2.2), M.whiteD); f.rotation.z = Math.PI/2; f.position.set(s*.72,.56,-.65); g.add(f); });
+  box(.48,.1,.44, M.black, 0,1.38,-.28); box(.48,.44,.08, M.black, 0,1.62,-.5);    // 좌석
+  box(.3,.06,.1, M.dark, 0,1.2,-.28);
+  const col = cyl(.035,.035,.62, M.dark, 0,1.42,.5, 10); col.rotation.x = -.5;
+  const sw = steeringWheel(M, g, 0,1.72,.36, -1.0);
+  cyl(.03,.03,1.15, M.silver, -.45,2.0,-.45, 8);                       // 수신기 기둥
+  add(new THREE.CylinderGeometry(.15,.17,.08,20), M.black, -.45,2.6,-.45);
+  add(new THREE.SphereGeometry(.13,16,8,0,Math.PI*2,0,Math.PI/2), M.white, -.45,2.64,-.45);
+  [-1,1].forEach(s => box(.16,.1,.03, M.red, s*.4,.95,-.62));
+  g.userData = { wheels, sw, M, impl:null, kind:'rice' };
+  return g;
+}
+function buildImpl(taskId, M){
+  const t = TASKS[taskId], W = t.w, impl = new THREE.Group(), { add, box, cyl } = maker(impl);
+  if (taskId === 'rotary'){
+    box(W,.5,.95, M.steel, 0,.62,0); box(W-.1,.12,.5, M.steel, 0,.92,.1);
+    box(W,.42,.06, M.steel, 0,.42,-.52).rotation.x = .35;
+    [-1,1].forEach(s => box(.06,.75,1.05, M.dark, s*W/2,.5,0));
+    box(.6,.45,.5, M.dark, 0,1.1,.25); add(new THREE.CylinderGeometry(.28,.28,W-.2,16), M.dark, 0,.32,.05).rotation.z = Math.PI/2;
+  } else if (taskId === 'ridge'){
+    box(W,.12,.14, M.orange, 0,.95,.35); box(.14,.6,.14, M.orange, 0,1.2,.5);
+    [-.75,.75].forEach(cx => {
+      [-1,1].forEach(s => { const d = add(new THREE.CylinderGeometry(.34,.34,.03,24), M.silver, cx + s*.45, .38, .1); d.rotation.z = Math.PI/2; d.rotation.y = s*.45; box(.05,.55,.05, M.orange, cx + s*.45,.72,.15); });
+      box(.95,.32,.8, M.orange, cx,.42,-.45); box(.8,.06,.7, M.steel, cx,.6,-.45);
+    });
+    [-1,1].forEach(s => { const gw = add(new THREE.CylinderGeometry(.22,.22,.12,16), M.rubber, s*(W/2-.1),.22,-.95); gw.rotation.z = Math.PI/2; });
+  } else if (taskId === 'mulch'){
+    box(W,.12,.14, M.orange, 0,.95,.4); box(.14,.6,.14, M.orange, 0,1.2,.5);
+    box(W*.62,.28,.7, M.orange, 0,.42,.05);                           // 두둑 성형판
+    const roll = add(new THREE.CylinderGeometry(.16,.16,W*.6,20), M.film, 0,.82,-.45); roll.rotation.z = Math.PI/2;
+    const core = add(new THREE.CylinderGeometry(.05,.05,W*.66,10), M.silver, 0,.82,-.45); core.rotation.z = Math.PI/2;
+    [-1,1].forEach(s => { box(.05,.5,.05, M.orange, s*W*.32,.85,-.45);
+      const d = add(new THREE.CylinderGeometry(.24,.24,.03,20), M.silver, s*W*.36,.26,-.95); d.rotation.z = Math.PI/2; d.rotation.y = -s*.4;
+      const pw = add(new THREE.CylinderGeometry(.14,.14,.12,14), M.rubber, s*W*.26,.15,-.75); pw.rotation.z = Math.PI/2; });
+  } else if (taskId === 'plant'){
+    const rack = new THREE.Group(); rack.position.set(0,1.45,.25); rack.rotation.x = -.75; impl.add(rack);
+    const mk = maker(rack);
+    mk.box(W,.05,1.15, M.white, 0,0,0);
+    for (let i=0;i<8;i++) mk.box(W/8-.05,.09,1.05, M.seed, -W/2 + W/16 + i*W/8, .07, 0);
+    box(W,.14,.5, M.dark, 0,.32,-.35);
+    for (let i=0;i<4;i++) box(W/4-.12,.06,.75, M.white, -W/2 + W/8 + i*W/4, .1,-.35);
+    for (let i=0;i<8;i++) box(.04,.3,.04, M.silver, -W/2 + W/16 + i*W/8, .2,-.62);
+    box(.18,.6,.18, M.dark, 0,.7,.1);
+    [-1,1].forEach(s => { const a = box(.03,.03,1.1, M.silver, s*(W/2+.1),.75,-.1); a.rotation.y = s*.25; });
+  }
+  impl.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return impl;
+}
+function attachImpl(T, taskId){
+  if (T.userData.impl) T.remove(T.userData.impl);
+  const impl = buildImpl(taskId, T.userData.M); impl.position.set(0,0,-TASKS[taskId].back); T.add(impl); T.userData.impl = impl;
+}
+
+/* =====================================================================
+   렌더러·장면
+   ===================================================================== */
+const mainC = $('#mainC'), ionC = $('#ionC'), mapC = $('#mapC');
+const R1 = new THREE.WebGLRenderer({ canvas:mainC, antialias:true });
+R1.outputEncoding = THREE.sRGBEncoding; R1.toneMapping = THREE.ACESFilmicToneMapping; R1.toneMappingExposure = 1.05;
+R1.shadowMap.enabled = true; R1.shadowMap.type = THREE.PCFSoftShadowMap;
+const R2 = new THREE.WebGLRenderer({ canvas:ionC, antialias:true }); R2.outputEncoding = THREE.sRGBEncoding;
+const ANISO = R1.capabilities.getMaxAnisotropy();
+function noiseTex(w, h, base, spots, n, rep){
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+  x.fillStyle = base; x.fillRect(0,0,w,h);
+  for (let i=0;i<n;i++){ x.fillStyle = spots[i%spots.length]; x.globalAlpha = .25 + Math.random()*.35; const s = 1 + Math.random()*3; x.fillRect(Math.random()*w, Math.random()*h, s, s); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); t.anisotropy = ANISO; t.encoding = THREE.sRGBEncoding; return t;
+}
+
+/* 실제 밭 장면 */
+const S1 = new THREE.Scene(); S1.background = new THREE.Color(0xbcd3e6); S1.fog = new THREE.Fog(0xbcd3e6, 70, 260);
+const cam1 = new THREE.PerspectiveCamera(52, 1, .1, 600);
+S1.add(new THREE.HemisphereLight(0xe2f0ff, 0x6b5a3a, .75));
+const sun = new THREE.DirectionalLight(0xfff2dc, 1.7); sun.castShadow = true; sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera, { left:-16, right:16, top:16, bottom:-16, near:1, far:90 }); sun.shadow.bias = -0.0006; S1.add(sun, sun.target);
+const grass = new THREE.Mesh(new THREE.PlaneGeometry(700,700), new THREE.MeshStandardMaterial({ map:noiseTex(256,256,'#7f9a55',['#6b8746','#93ad66','#5f7a3c'],5000,90), roughness:1 }));
+grass.rotation.x = -Math.PI/2; grass.position.set(8,-.02,25); grass.receiveShadow = true; S1.add(grass);
+const headMatDry = new THREE.MeshStandardMaterial({ map:noiseTex(256,256,'#a88c66',['#957a56','#b89c74','#8a6f4c'],6000,6), roughness:1 });
+const headMatWet = new THREE.MeshStandardMaterial({ map:noiseTex(256,256,'#76705a',['#6a6450','#827c64','#5c5644'],6000,6), roughness:.85 });
+const head = new THREE.Mesh(new THREE.PlaneGeometry(1,1), headMatDry); head.rotation.x = -Math.PI/2; head.receiveShadow = true; S1.add(head);
+const soilC = document.createElement('canvas'); const soilX = soilC.getContext('2d');
+const soilTex = new THREE.CanvasTexture(soilC); soilTex.anisotropy = ANISO; soilTex.encoding = THREE.sRGBEncoding;
+const fieldMat = new THREE.MeshStandardMaterial({ map:soilTex, roughness:1 });
+const field = new THREE.Mesh(new THREE.PlaneGeometry(1,1), fieldMat); field.rotation.x = -Math.PI/2; field.receiveShadow = true; S1.add(field);
+(() => {
+  const trunkG = new THREE.CylinderGeometry(.25,.35,2.4,8), leafG = new THREE.SphereGeometry(2.4,12,10);
+  const tM = new THREE.MeshStandardMaterial({ color:0x5a4330 }), lM = new THREE.MeshStandardMaterial({ color:0x4e7a3a, roughness:1 });
+  for (let i=0;i<46;i++){ const a = i/46*Math.PI*2 + Math.random()*.1, r = 62 + Math.random()*28;
+    const x = 8 + Math.cos(a)*r, z = 25 + Math.sin(a)*r*1.1, s = .8 + Math.random()*.8;
+    const t = new THREE.Mesh(trunkG, tM); t.position.set(x,1.2*s,z); t.scale.setScalar(s); S1.add(t);
+    const l = new THREE.Mesh(leafG, lM); l.position.set(x,3.8*s,z); l.scale.set(s, s*1.15, s); S1.add(l); }
+  const barn = new THREE.Group(); barn.position.set(-26,0,58);
+  const b1 = new THREE.Mesh(new THREE.BoxGeometry(14,6,9), new THREE.MeshStandardMaterial({ color:0xe8e4da })); b1.position.y = 3; barn.add(b1);
+  const roof = new THREE.Mesh(new THREE.CylinderGeometry(5.2,5.2,14.4,3,1), new THREE.MeshStandardMaterial({ color:0x2f5d4a })); roof.rotation.z = Math.PI/2; roof.rotation.x = Math.PI/2; roof.position.y = 7.6; roof.scale.set(1,1,.55); barn.add(roof);
+  barn.rotation.y = .4; S1.add(barn);
+})();
+const TR1 = makeTractor(), RI1 = makeTransplanter(); S1.add(TR1, RI1);
+// 흙먼지·물보라
+const DUST_N = 90, dustG = new THREE.BufferGeometry(), dustP = new Float32Array(DUST_N*3), dust = [];
+for (let i=0;i<DUST_N;i++){ dust.push({ life:0, x:0,y:-10,z:0, vx:0,vy:0,vz:0 }); dustP[i*3+1] = -10; }
+dustG.setAttribute('position', new THREE.BufferAttribute(dustP,3));
+function puffTex(rgb){ const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const gr = x.createRadialGradient(32,32,0,32,32,32); gr.addColorStop(0,`rgba(${rgb},.55)`); gr.addColorStop(1,`rgba(${rgb},0)`); x.fillStyle = gr; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); }
+const dustMat = new THREE.PointsMaterial({ size:1.6, map:puffTex('150,120,85'), transparent:true, depthWrite:false });
+const splashTex = puffTex('210,225,230'), dustTexDry = dustMat.map;
+S1.add(new THREE.Points(dustG, dustMat)); let dustI = 0;
+
+/* pluva iON 화면 장면 */
+const S2 = new THREE.Scene(); S2.background = new THREE.Color(0xd9d9d9); S2.fog = new THREE.Fog(0xd9d9d9, 30, 85);
+const cam2 = new THREE.PerspectiveCamera(48, 320/540, .1, 300);
+S2.add(new THREE.HemisphereLight(0xffffff, 0x9a9a9a, .95)); const sun2 = new THREE.DirectionalLight(0xffffff, .9); sun2.position.set(10,20,-8); S2.add(sun2);
+const ground2 = new THREE.Mesh(new THREE.PlaneGeometry(600,600), new THREE.MeshBasicMaterial({ color:0xd6d6d6 })); ground2.rotation.x = -Math.PI/2; ground2.position.set(8,-.02,25); S2.add(ground2);
+const ionMat = new THREE.MeshBasicMaterial({ transparent:true, depthWrite:false });
+const ionPlane = new THREE.Mesh(new THREE.PlaneGeometry(1,1), ionMat); ionPlane.rotation.x = -Math.PI/2; ionPlane.visible = false; S2.add(ionPlane);
+const lines2 = new THREE.Group(); S2.add(lines2);
+const TR2 = makeTractor(), RI2 = makeTransplanter(); S2.add(TR2, RI2);
+function pinTexture(letter){
+  const c = document.createElement('canvas'); c.width = 128; c.height = 168; const x = c.getContext('2d');
+  x.fillStyle = '#141414'; x.beginPath(); x.arc(64,60,54,Math.PI*.82,Math.PI*.18); x.lineTo(64,164); x.closePath(); x.fill();
+  x.lineWidth = 6; x.strokeStyle = 'rgba(255,255,255,.9)'; x.stroke();
+  x.fillStyle = '#fff'; x.font = 'bold 72px IBM Plex Sans KR, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(letter,64,64);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+}
+function makePin(letter){ const s = new THREE.Sprite(new THREE.SpriteMaterial({ map:pinTexture(letter), depthTest:false })); s.center.set(.5,0); s.scale.set(1.5,1.97,1); s.visible = false; S2.add(s); return s; }
+const pinA = makePin('A'), pinB = makePin('B');
+
+/* 작업별 밭 표면 */
+function tile(w, h, draw){ const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); return c; }
+function speckle(x, w, h, n, cols){ for (let i=0;i<n;i++){ x.fillStyle = cols[i%cols.length]; x.fillRect(Math.random()*w, Math.random()*h, 1+Math.random()*2, 1+Math.random()*2); } }
+const TILES = {
+  rotary: tile(64,64,(x,w,h) => { x.fillStyle = '#5f4430'; x.fillRect(0,0,w,h); speckle(x,w,h,500,['#4d3524','#6e523b','#3f2b1d','#76593f']); x.fillStyle = 'rgba(30,20,12,.35)'; for (let y=0;y<h;y+=8) x.fillRect(0,y,w,2); }),
+  ridge: tile(30,32,(x,w,h) => { const g = x.createLinearGradient(0,0,w,0);
+    g.addColorStop(0,'#3e2b1d'); g.addColorStop(.18,'#6f523a'); g.addColorStop(.42,'#a6835d'); g.addColorStop(.5,'#b28e66'); g.addColorStop(.58,'#9a7853'); g.addColorStop(.82,'#5d4430'); g.addColorStop(1,'#3e2b1d');
+    x.fillStyle = g; x.fillRect(0,0,w,h); speckle(x,w,h,90,['rgba(60,40,25,.6)','rgba(190,160,120,.5)']); }),
+  mulch: tile(26,32,(x,w,h) => { x.fillStyle = '#4a3424'; x.fillRect(0,0,w,h); speckle(x,w,h,60,['#3a281b','#5d4430']);
+    const g = x.createLinearGradient(5,0,w-5,0); g.addColorStop(0,'#141516'); g.addColorStop(.35,'#3a3d40'); g.addColorStop(.5,'#5a5e62'); g.addColorStop(.65,'#2b2e31'); g.addColorStop(1,'#141516');
+    x.fillStyle = g; x.fillRect(5,0,w-10,h); x.fillStyle = 'rgba(255,255,255,.08)'; x.fillRect(11,0,2,h); }),
+  plant: tile(6,4,(x) => { x.fillStyle = 'rgba(90,96,82,.35)'; x.fillRect(0,0,6,4); x.fillStyle = '#4f9a36'; x.fillRect(2,1,2,2); x.fillStyle = '#7cc25a'; x.fillRect(2,1,1,1); }),
+};
+let curPat = null, curTile = null;
+function resetSoil(taskId){
+  if (soilC.width !== F.SX || soilC.height !== F.SZ){ soilC.width = F.SX; soilC.height = F.SZ; soilTex.dispose(); }
+  const X = soilX, W = F.SX, H = F.SZ;
+  if (taskId === 'plant'){
+    X.fillStyle = '#7d877c'; X.fillRect(0,0,W,H);
+    for (let i=0;i<5000;i++){ X.fillStyle = ['#737d72','#8a948a','#6c7468','#9aa6a4'][i%4]; X.globalAlpha = .45; X.fillRect(Math.random()*W, Math.random()*H, 2+Math.random()*6, 1+Math.random()*2); }
+    X.globalAlpha = .18; X.fillStyle = '#d6e4ec'; for (let i=0;i<60;i++) X.fillRect(Math.random()*W, Math.random()*H, 30+Math.random()*80, 2);
+  } else {
+    X.fillStyle = '#a48862'; X.fillRect(0,0,W,H);
+    for (let i=0;i<9000;i++){ X.fillStyle = ['#977b56','#b0946c','#8c714f','#c2a67c'][i%4]; X.globalAlpha = .5; X.fillRect(Math.random()*W, Math.random()*H, 1+Math.random()*3, 1+Math.random()*3); }
+    X.globalAlpha = .28; X.fillStyle = '#7d6446'; for (let x=4;x<W;x+=12) X.fillRect(x,0,2,H);
+  }
+  X.globalAlpha = 1;
+  curTile = TILES[taskId]; curPat = X.createPattern(curTile, 'repeat');
+  soilTex.needsUpdate = true;
+}
+function setPatternOffset(passX){
+  if (!curPat || !curPat.setTransform) return;
+  try { const off = (passX - F.w/2)/SOIL_RES; curPat.setTransform(new DOMMatrix().translateSelf(((off % curTile.width) + curTile.width) % curTile.width, 0)); } catch(_){}
+}
+function layoutField(taskId){
+  const rice = taskId === 'plant';
+  field.geometry.dispose(); field.geometry = new THREE.PlaneGeometry(F.W, F.L); field.position.set(F.W/2, .03, F.L/2);
+  fieldMat.roughness = rice ? .3 : 1; fieldMat.metalness = rice ? .15 : 0; fieldMat.needsUpdate = true;
+  head.geometry.dispose(); head.geometry = new THREE.PlaneGeometry(F.W+24, F.L+28); head.position.set(F.W/2, 0, F.L/2); head.material = rice ? headMatWet : headMatDry;
+  ionPlane.geometry.dispose(); ionPlane.geometry = new THREE.PlaneGeometry(F.W, F.L); ionPlane.position.set(F.W/2, .02, F.L/2);
+  dustMat.map = rice ? splashTex : dustTexDry; dustMat.needsUpdate = true;
+  resetSoil(taskId);
+}
+
+/* =====================================================================
+   게임 상태
+   ===================================================================== */
+const G = { phase:'title', machine:'tractor', task:'rotary', r1:null, r2:null, sub:null, uOn:true, uOff:0,
+  keys:{ l:false, r:false, u:false, d:false }, last:performance.now(), resultAt:0, orbit:0, ab:null, pinA:null, pinB:null, toastT:0 };
+const WH = { angle:0, grab:false, last:0, max:270 };
+G.bound = []; G.autoSpeed = 4.5;
+G.autoSpeedFrom = r => { const v = r && r.mt > 1 ? r.md/r.mt : 4.5; return clamp(v, 2.2, VMAX); };   // 1라운드 평균 운전 속도(게임 속도)
+let T1 = TR1, T2 = TR2;
+
+function newRound(kind){
+  const c = document.createElement('canvas'); c.width = F.NX; c.height = F.NZ; const ctx = c.getContext('2d');
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+  return { kind, canvas:c, ctx, img:ctx.createImageData(F.NX,F.NZ), tex, dirty:false,
+    count:new Uint8Array(F.TOTAL), pass:new Int16Array(F.TOTAL).fill(-1),
+    x:laneX(0), z:-5, yaw:0, v:0, delta:0, yawNoise:0,
+    inField:false, passId:-1, passStartZ:0, passes:0, prev:null,
+    auto:false, k:0, sigma:1, turn:null, lineWorked:false,
+    steer:0, steerDeg:0, time:0, dist:0, done:false, stats:null, lift:0 };
+}
+function activeRound(){ return ['r1','r1done'].includes(G.phase) ? G.r1 : ['setup','r2','result'].includes(G.phase) ? G.r2 : null; }
+function useRound(r){ resetSoil(G.task); ionMat.map = r ? r.tex : null; ionMat.needsUpdate = true; ionPlane.visible = !!r; }
+function canDrive(){ return G.phase === 'r1'; }
+function timing(){ return G.phase === 'r1' || G.phase === 'r2'; }
+
+/* =====================================================================
+   작업 칠하기·통계
+   ===================================================================== */
+function setPx(r,k,rgb,a=235){ const d = r.img.data, i = k*4; d[i]=rgb[0]; d[i+1]=rgb[1]; d[i+2]=rgb[2]; d[i+3]=a; r.dirty = true; }
+function rasterQuad(r, P){
+  let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9; P.forEach(p => { minx=Math.min(minx,p.x); maxx=Math.max(maxx,p.x); minz=Math.min(minz,p.z); maxz=Math.max(maxz,p.z); });
+  const i0 = Math.max(0, Math.floor(minx/RES)), i1 = Math.min(F.NX-1, Math.floor(maxx/RES)), j0 = Math.max(0, Math.floor(minz/RES)), j1 = Math.min(F.NZ-1, Math.floor(maxz/RES));
+  if (i1 < i0 || j1 < j0) return;
+  const cr = (a,b,px,pz) => (b.x-a.x)*(pz-a.z) - (b.z-a.z)*(px-a.x);
+  for (let j=j0;j<=j1;j++) for (let i=i0;i<=i1;i++){
+    const px = (i+.5)*RES, pz = (j+.5)*RES;
+    let pos = 0, neg = 0; for (let e=0;e<4;e++){ const c = cr(P[e], P[(e+1)%4], px, pz); if (c > 1e-9) pos++; else if (c < -1e-9) neg++; }
+    if (pos && neg) continue;
+    const k = j*F.NX+i;
+    if (r.pass[k] === -1){ r.pass[k] = r.passId; r.count[k] = 1; setPx(r,k,COL.cover); }
+    else if (r.pass[k] !== r.passId && r.count[k] < 2){ r.count[k] = 2; setPx(r,k,COL.over); }
+  }
+}
+function implCenter(r){ return { x:r.x - Math.sin(r.yaw)*F.back, z:r.z - Math.cos(r.yaw)*F.back }; }
+function workStep(r){
+  const c = implCenter(r);
+  const inside = c.x > -F.w*.3 && c.x < F.W + F.w*.3 && c.z > -.2 && c.z < F.L + .2;
+  const lowered = inside && r.v > .15 && !r.turn && timing();
+  if (lowered && !r.inField){ r.inField = true; r.passId++; r.passStartZ = c.z; r.prev = null; setPatternOffset(c.x); }
+  if (!lowered && r.inField){ r.inField = false; r.prev = null;
+    if (Math.abs(c.z - r.passStartZ) > F.L*.5){ r.passes++; onPassDone(r); } }
+  r.lift += ((lowered ? 0 : .35) - r.lift)*.15;
+  if (!lowered) return;
+  if (r.auto) r.lineWorked = true;
+  const fx = Math.sin(r.yaw), fz = Math.cos(r.yaw), rx = fz, rz = -fx, hw = F.w/2;
+  const L = { x:c.x + rx*hw, z:c.z + rz*hw }, R = { x:c.x - rx*hw, z:c.z - rz*hw };
+  if (r.prev){
+    soilX.fillStyle = curPat; soilX.beginPath();
+    [r.prev.L, r.prev.R, R, L].forEach((p,i) => { const a = p.x/SOIL_RES, b = p.z/SOIL_RES; i ? soilX.lineTo(a,b) : soilX.moveTo(a,b); });
+    soilX.closePath(); soilX.fill(); soilTex.needsUpdate = true;
+    rasterQuad(r, [r.prev.L, r.prev.R, R, L]);
+    emitDust(c, fz);
+  }
+  r.prev = { L, R };
+}
+function emitDust(c, fz){
+  const d = dust[dustI = (dustI+1)%DUST_N];
+  d.life = 1; d.x = c.x + (Math.random()-.5)*F.w; d.y = .35; d.z = c.z - fz*.5; d.vx = (Math.random()-.5)*.6; d.vy = .5 + Math.random()*.6; d.vz = -fz*.8;
+}
+function onPassDone(r){ if (r.passes >= F.lanes && !(G.phase === 'setup')) finishRound(r); else updateTabletButtons(); }
+function finishRound(r){
+  if (r.done) return;
+  r.done = true; r.auto = false; r.turn = null; r.v = 0;
+  let miss = 0, over = 0;
+  soilX.fillStyle = 'rgba(214,64,52,.55)'; const sc = RES/SOIL_RES;
+  for (let k=0;k<F.TOTAL;k++){
+    if (r.count[k] === 0){ miss++; setPx(r,k,COL.miss,230); soilX.fillRect((k % F.NX)*sc, ((k / F.NX)|0)*sc, sc, sc); }
+    else if (r.count[k] >= 2) over++;
+  }
+  soilTex.needsUpdate = true;
+  r.stats = { miss:miss/F.TOTAL, over:over/F.TOTAL, steer:r.steer, steerDeg:Math.round(r.steerDeg), time:r.time, area:Math.round((F.TOTAL-miss)*RES*RES) };
+  setTimeout(() => setPhase(r.kind === 'manual' ? 'r1done' : 'result'), 1100);
+}
+
+/* =====================================================================
+   주행 (자전거 모델) + 자동조향
+   ===================================================================== */
+const AB = () => G.ab;   // { A:{x,z}, d:{x,z}, n:{x,z}, s }
+function lineV(p){ const ab = G.ab; return (p.x-ab.A.x)*ab.n.x + (p.z-ab.A.z)*ab.n.z; }
+function lineU(p){ const ab = G.ab; return (p.x-ab.A.x)*ab.d.x + (p.z-ab.A.z)*ab.d.z; }
+function fromUV(u, v){ const ab = G.ab; return { x:ab.A.x + ab.d.x*u + ab.n.x*v, z:ab.A.z + ab.d.z*u + ab.n.z*v }; }
+function engageAuto(r){
+  const fx = Math.sin(r.yaw), fz = Math.cos(r.yaw);
+  r.auto = true; r.sigma = (fx*G.ab.d.x + fz*G.ab.d.z) >= 0 ? 1 : -1;
+  r.k = Math.round(lineV(r)/F.w); r.lineWorked = false; r.turn = null;
+  // 줄 끝을 지나 바깥을 보고 있으면 바로 다음 줄로 유턴
+  const c = implCenter(r);
+  if ((fz > 0 && c.z > F.L) || (fz < 0 && c.z < 0)){ if (G.uOn) startTurn(r); }
+  toast(`자동 주행을 시작합니다 · ${(G.autoSpeed*3.6/TIME_SCALE).toFixed(1)}km/h (1라운드 내 운전 속도), 유턴 시 감속`);
+}
+function disengage(r, msg){ if (!r.auto) return; r.auto = false; r.turn = null; toast(msg || '자동조향이 해제되었습니다. 초록 핸들 버튼을 눌러 다시 켜세요.'); updateTabletButtons(); }
+function startTurn(r){
+  const v0 = lineV(r), u0 = lineU(r), k1 = r.k + G.ab.s, v1 = k1*F.w;
+  const R = Math.abs(v1 - v0)/2, R2 = Math.max(R, MACHINES[G.machine].wb/Math.tan(DMAX)*1.05);
+  r.turn = { a:0, u0, v0, v1, vc:(v0+v1)/2, R, R2, len:Math.PI*(R+R2)/2, k1 };
+}
+function stepRound(r, dt){
+  if (!r || r.done) return;
+  const drive = canDrive(), M = MACHINES[G.machine];
+  // 속도: ↑ 가속, ↓ 감속·후진, 손을 떼면 그 속도 유지
+  if (r.auto){
+    // 자동 주행 속도: 1라운드 내 평균 운전 속도, 유턴 때는 절반으로 감속
+    const tgt = r.paused ? 0 : (r.turn ? G.autoSpeed*.5 : G.autoSpeed);
+    r.v += clamp(tgt - r.v, -BRK*dt, ACC*.8*dt);
+  } else if (drive){
+    if (G.keys.u) r.v = Math.min(VMAX, r.v + ACC*dt);
+    if (G.keys.d) r.v = Math.max(VREV, r.v - BRK*dt);
+  } else r.v += (0 - r.v)*Math.min(1, dt*4);
+  if (timing() && Math.abs(r.v) > .3){ r.mt = (r.mt||0) + dt; r.md = (r.md||0) + Math.abs(r.v)*dt; }
+  if (r.turn){
+    const T = r.turn, sp = Math.max(0, r.v); if (r.v < 0) r.v = 0;
+    T.a = Math.min(Math.PI, T.a + sp*dt/T.len*Math.PI);
+    const u = T.u0 + r.sigma*T.R2*Math.sin(T.a), v = T.vc + (T.v0 - T.vc)*Math.cos(T.a);
+    const p = fromUV(u, v), dx = p.x - r.x, dz = p.z - r.z;
+    if (Math.hypot(dx,dz) > 1e-5){ const ny = Math.atan2(dx,dz); const yr = wrap(ny - r.yaw)/Math.max(dt,1e-3); r.delta = clamp(Math.atan(M.wb*yr/Math.max(sp,.3)), -DMAX, DMAX); r.yaw = ny; }
+    r.x = p.x; r.z = p.z; r.dist += sp*dt;
+    if (T.a >= Math.PI){ r.turn = null; r.k = T.k1; r.sigma = -r.sigma; r.lineWorked = false; const d = r.sigma; r.yaw = Math.atan2(G.ab.d.x*d, G.ab.d.z*d); }
+  } else {
+    if (r.auto && r.v > 0){
+      const p = { x:r.x, z:r.z }, u = lineU(p), Ld = 3 + .6*r.v;
+      const t = fromUV(u + r.sigma*Ld, r.k*F.w);
+      const alpha = wrap(Math.atan2(t.x - r.x, t.z - r.z) - r.yaw);
+      r.delta = clamp(Math.atan(2*M.wb*Math.sin(alpha)/Ld), -DMAX, DMAX);
+      const c = implCenter(r), fz = Math.cos(r.yaw), ext = G.uOff;
+      if (r.lineWorked && ((fz > 0 && c.z > F.L + .3 + ext) || (fz < 0 && c.z < -.3 - ext))){
+        if (G.uOn) startTurn(r); else { r.v = 0; disengage(r, '유턴이 꺼져 있어 줄 끝에서 자동조향이 해제되었습니다.'); }
+      }
+    } else if (!r.auto){
+      r.delta = -(WH.angle/WH.max)*DMAX;
+    }
+    if (!r.turn){
+      r.yawNoise += (-r.yawNoise*1.2 + gauss()*.09)*dt;
+      r.yaw += (r.v/M.wb*Math.tan(r.delta) + r.yawNoise*Math.min(1, Math.abs(r.v)/2))*dt;
+      r.x += Math.sin(r.yaw)*r.v*dt; r.z += Math.cos(r.yaw)*r.v*dt; r.dist += Math.abs(r.v)*dt;
+      r.x = clamp(r.x, -25, F.W + 25); r.z = clamp(r.z, -18, F.L + 18);
+    }
+  }
+  if (timing()) r.time += dt*TIME_SCALE;
+  workStep(r);
+}
+
+/* =====================================================================
+   카메라·모델 동기화
+   ===================================================================== */
+const camPos = new THREE.Vector3(-10, 6, -14), camLook = new THREE.Vector3();
+function syncModel(T, r, dt){
+  const st = r || { x:laneX(0), z:-5, yaw:0, v:0, delta:0, lift:0 };
+  T.position.set(st.x, 0, st.z); T.rotation.y = st.yaw;
+  const W = T.userData.wheels, dv = st.v*dt;
+  W.rear.forEach(w => w.rotation.x += dv/W.rr); W.front.forEach(w => w.rotation.x += dv/W.fr);
+  W.pivots.forEach(p => p.rotation.y = st.delta || 0);
+  T.userData.sw.rotation.z = -WH.angle*Math.PI/180;
+  if (T.userData.impl) T.userData.impl.position.y = st.lift || 0;
+}
+function updateCameras(dt){
+  const r = activeRound(), M = MACHINES[G.machine];
+  const st = r || { x:laneX(0), z:-5, yaw:0 };
+  const fx = Math.sin(st.yaw), fz = Math.cos(st.yaw);
+  if (G.phase === 'title' || G.phase === 'task'){
+    G.orbit += dt*.18; const a = G.orbit;
+    camPos.set(st.x + Math.sin(a)*M.camDist, M.camH*.8, st.z + Math.cos(a)*M.camDist); camLook.set(st.x, 1.3, st.z);
+  } else {
+    const k = 1 - Math.exp(-dt*2.6);
+    camPos.lerp(new THREE.Vector3(st.x - fx*M.camDist, M.camH, st.z - fz*M.camDist), k);
+    camLook.lerp(new THREE.Vector3(st.x + fx*7, 1.1, st.z + fz*7), k);
+  }
+  cam1.position.copy(camPos); cam1.lookAt(camLook);
+  sun.position.set(st.x + 18, 30, st.z - 12); sun.target.position.set(st.x, 0, st.z); sun.target.updateMatrixWorld();
+  const d2 = G.machine === 'rice' ? 7.5 : 9.8;
+  cam2.position.set(st.x - fx*d2, d2*.85, st.z - fz*d2); cam2.lookAt(st.x + fx*9, 0, st.z + fz*9);
+}
+
+/* =====================================================================
+   iON 3D 가이드 라인
+   ===================================================================== */
+let activeLine = null;
+function buildGuides(){
+  lines2.clear(); activeLine = null; if (!G.ab) return;
+  const ab = G.ab, rot = Math.atan2(ab.d.x, ab.d.z);
+  const lineM = new THREE.MeshBasicMaterial({ color:0xffffff }), yM = new THREE.MeshBasicMaterial({ color:0xf2c230 });
+  for (let k=-4;k<F.lanes+4;k++){ const k2 = k*ab.s;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(.12, 160), lineM); m.rotation.order = 'YXZ'; m.rotation.set(-Math.PI/2, rot, 0);
+    const c = fromUV(F.L/2, k2*F.w); m.position.set(c.x, .03, c.z); lines2.add(m); }
+  [0,1].forEach(e => { const m = new THREE.Mesh(new THREE.PlaneGeometry(80, .1), yM); m.rotation.x = -Math.PI/2; m.position.set(F.W/2, .035, 0); m.userData.yellow = e; lines2.add(m); });
+  activeLine = new THREE.Mesh(new THREE.PlaneGeometry(.42, 160), new THREE.MeshBasicMaterial({ color:0xffffff })); activeLine.rotation.order = 'YXZ'; activeLine.rotation.set(-Math.PI/2, rot, 0); lines2.add(activeLine);
+}
+
+/* =====================================================================
+   태블릿 지도
+   ===================================================================== */
+let K = 1; const DPR = () => Math.min(2, window.devicePixelRatio || 1);
+const sat = (() => { const c = document.createElement('canvas'); c.width = 640; c.height = 540; const x = c.getContext('2d');
+  x.fillStyle = '#1f321f'; x.fillRect(0,0,640,540);
+  for (let i=0;i<900;i++){ x.fillStyle = ['#1a2c1a','#26402a','#2c4a2f','#182818','#34503a'][i%5]; x.globalAlpha = .35; x.beginPath(); x.ellipse(Math.random()*640, Math.random()*540, 4+Math.random()*26, 3+Math.random()*14, Math.random()*3, 0, Math.PI*2); x.fill(); }
+  x.globalAlpha = .5; x.strokeStyle = '#4a4636'; x.lineWidth = 9; x.beginPath(); x.moveTo(-10,60); x.lineTo(650,20); x.stroke(); x.globalAlpha = 1; return c; })();
+function mapView(){ const s = Math.min(640/(F.W+46), 540/(F.L+30)); return { s, ox:(640 - F.W*s)/2 - 40, oy:(540 - F.L*s)/2 + 22 }; }
+const toMap = (V, x, z) => [V.ox + (F.W - x)*V.s, V.oy + (F.L - z)*V.s];
+function drawPin(x, X, Y, letter){ x.save(); x.translate(X,Y); x.fillStyle = '#141414'; x.beginPath(); x.arc(0,-26,17,Math.PI*.8,Math.PI*.2); x.lineTo(0,0); x.closePath(); x.fill();
+  x.strokeStyle = '#fff'; x.lineWidth = 2; x.stroke(); x.fillStyle = '#fff'; x.font = 'bold 20px IBM Plex Sans KR, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(letter,0,-25); x.restore(); }
+const CORNERS = () => [[0,0],[F.W,0],[F.W,F.L],[0,F.L]];
+function drawBoundary(x, V){
+  if (!['setup','r2','result'].includes(G.phase)) return;
+  const pts = G.bound.map(i => CORNERS()[i]);
+  if (pts.length){
+    x.strokeStyle = '#F2C230'; x.lineWidth = 2.5; x.beginPath();
+    pts.forEach((p,i) => { const [X,Y] = toMap(V,p[0],p[1]); i ? x.lineTo(X,Y) : x.moveTo(X,Y); }); if (pts.length === 4) x.closePath(); x.stroke();
+  }
+  if (G.phase === 'setup' && G.sub === 'bound'){
+    const t = performance.now(), pulse = 10 + Math.sin(t/220)*4;
+    CORNERS().forEach((p,i) => { const [X,Y] = toMap(V,p[0],p[1]), on = G.bound.includes(i);
+      x.fillStyle = on ? '#F2C230' : 'rgba(242,194,48,.3)'; x.beginPath(); x.arc(X,Y,on?9:pulse+8,0,Math.PI*2); x.fill();
+      if (!on){ x.fillStyle = '#F2C230'; x.beginPath(); x.arc(X,Y,7,0,Math.PI*2); x.fill(); } });
+  }
+  if (G.ab && G.phase === 'setup'){
+    // 생성된 작업 경로 미리보기 (직선 + 유턴)
+    x.strokeStyle = 'rgba(61,220,106,.9)'; x.lineWidth = 4; x.lineCap = 'round'; x.lineJoin = 'round'; x.beginPath();
+    for (let i=0;i<F.lanes;i++){
+      const up = i % 2 === 0, z0 = up ? -2 : F.L + 2, z1 = up ? F.L + 2 : -2;
+      const [Xa,Ya] = toMap(V, laneX(i), z0), [Xb,Yb] = toMap(V, laneX(i), z1);
+      if (i === 0) x.moveTo(Xa,Ya); x.lineTo(Xb,Yb);
+      if (i < F.lanes-1){ const [Xn] = toMap(V, laneX(i+1), z1), bulge = (up ? -1 : 1)*V.s*3.2; x.bezierCurveTo(Xb, Yb + bulge, Xn, Yb + bulge, Xn, Yb); }
+    }
+    x.stroke();
+  }
+}
+function drawMap(){
+  const d = DPR()*K, W = Math.round(640*d), H = Math.round(540*d);
+  if (mapC.width !== W || mapC.height !== H){ mapC.width = W; mapC.height = H; }
+  const x = mapC.getContext('2d'); x.setTransform(d,0,0,d,0,0); x.drawImage(sat,0,0);
+  const V = mapView(), r = activeRound();
+  const [fx0, fy0] = toMap(V, F.W, F.L); x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 1.5; x.strokeRect(fx0, fy0, F.W*V.s, F.L*V.s);
+  if (r){ x.save(); x.translate(V.ox + F.W*V.s, V.oy + F.L*V.s); x.scale(-V.s*RES, -V.s*RES); x.globalAlpha = .92; x.drawImage(r.canvas,0,0); x.restore(); }
+  if (G.ab){
+    const seg = (k, w, col) => { const a = fromUV(-80, k*F.w), b = fromUV(130, k*F.w); const [X1,Y1] = toMap(V,a.x,a.z), [X2,Y2] = toMap(V,b.x,b.z); x.strokeStyle = col; x.lineWidth = w; x.beginPath(); x.moveTo(X1,Y1); x.lineTo(X2,Y2); x.stroke(); };
+    for (let k=-8;k<F.lanes+8;k++) seg(k*G.ab.s, 1.1, 'rgba(255,255,255,.8)');
+    x.strokeStyle = '#f2c230'; x.lineWidth = 1.2;
+    [-G.uOff, F.L + G.uOff].forEach(z => { const [, Y] = toMap(V, 0, z); x.beginPath(); x.moveTo(0,Y); x.lineTo(640,Y); x.stroke(); });
+    if (r && r.auto){ seg(r.turn ? r.turn.k1 : r.k, 3, '#fff'); }
+    if (r && r.turn){ x.strokeStyle = 'rgba(61,220,106,.85)'; x.lineWidth = 5; x.lineCap = 'round'; x.beginPath();
+      for (let i=0;i<=24;i++){ const a = i/24*Math.PI, T = r.turn; const p = fromUV(T.u0 + r.sigma*T.R2*Math.sin(a), T.vc + (T.v0 - T.vc)*Math.cos(a)); const [X,Y] = toMap(V,p.x,p.z); i ? x.lineTo(X,Y) : x.moveTo(X,Y); } x.stroke(); }
+  }
+  drawBoundary(x, V);
+  const st = r || { x:laneX(0), z:-5, yaw:0 }; const [X, Y] = toMap(V, st.x, st.z);
+  x.save(); x.translate(X,Y); x.fillStyle = '#fff'; x.beginPath(); x.arc(0,0,16,0,Math.PI*2); x.fill();
+  x.rotate(Math.atan2(-Math.cos(st.yaw), -Math.sin(st.yaw)) + Math.PI/2);
+  x.fillStyle = '#2F5BEA'; x.beginPath(); x.moveTo(0,-10); x.lineTo(8,8); x.lineTo(0,4); x.lineTo(-8,8); x.closePath(); x.fill(); x.restore();
+}
+
+/* =====================================================================
+   태블릿 UI
+   ===================================================================== */
+const ICON_WHEEL = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M3.5 10.5h6.5M14 10.5h6.5M12 14v7"/></svg>';
+function setAct(kind, disabled){
+  const b = $('#tbAct'); b.hidden = !kind; b.className = 'tb-act'; b.style.fontSize = ''; b.disabled = !!disabled; b.style.opacity = disabled ? .45 : '';
+  if (kind === 'gen'){ b.textContent = '경로 생성'; b.classList.add('wide','pulse'); b.setAttribute('aria-label','작업 경로 생성'); }
+  else if (kind === 'start'){ b.textContent = '작업 시작'; b.classList.add('wide','pulse'); b.setAttribute('aria-label','자동 주행 시작'); }
+  else if (kind === 'pause'){ const p = G.r2 && G.r2.paused; b.textContent = p ? '▶' : 'Ⅱ'; b.style.fontSize = '34px'; b.setAttribute('aria-label', p ? '다시 시작' : '일시정지'); }
+  else if (kind === 'auto'){ b.innerHTML = ICON_WHEEL; b.classList.add('green','pulse'); b.setAttribute('aria-label','자동조향 켜기'); }
+  else if (kind === 'autoOn'){ b.innerHTML = ICON_WHEEL; b.classList.add('green'); b.setAttribute('aria-label','자동조향 끄기'); }
+}
+function toast(t){ $('#tbToast').textContent = t || ''; G.toastT = t ? performance.now() : 0; }
+function updateTabletButtons(){
+  const P = G.phase, r = G.r2;
+  if (P === 'setup'){
+    if (G.sub === 'gen') setAct('gen');
+    else if (G.sub === 'ready') setAct('start');
+    else setAct(null);
+  } else if (P === 'r2' && r && !r.done) setAct('pause');
+  else setAct(null);
+}
+function renderTablet(){
+  const P = G.phase;
+  $('#tbPanel').hidden = !(P === 'setup' && G.sub === 'uturn');
+  $('#tbProgress').hidden = P !== 'r2';
+  $('#uToggle').setAttribute('aria-pressed', String(G.uOn));
+  $('#uOff').innerHTML = `${G.uOff}<small>m</small>`;
+  $('#uWarn').textContent = G.uOn ? '' : '유턴이 꺼지면 줄 끝에서 자동조향이 해제됩니다.';
+  updateTabletButtons();
+  if (P === 'setup'){
+    if (G.sub === 'bound') toast(`지도에서 밭 외곽 모서리 4곳을 눌러 경계를 만드세요. (${G.bound.length}/4)`);
+    else if (G.sub === 'gen') toast('경계가 저장되었습니다. 경로 생성 버튼을 누르세요.');
+    else if (G.sub === 'ready') toast(`작업폭 ${F.w}m 기준으로 ${F.lanes}줄 경로와 유턴을 만들었습니다. 작업 시작을 누르세요.`);
+  } else if (P === 'r1') toast('자동조향 꺼짐 · 직접 운전 중');
+  else if (P !== 'r2') toast('');
+}
+function updateLive(){
+  const r = activeRound();
+  const kmh = r ? r.v*3.6/TIME_SCALE : 0;
+  const ks = Math.abs(kmh) < .05 ? '0.0' : (kmh < 0 ? `R ${(-kmh).toFixed(1)}` : kmh.toFixed(1));
+  $('#tbSpeed').textContent = ks; $('#spdV').textContent = ks;
+  let area = 0; if (r){ for (let k=0;k<F.TOTAL;k++) if (r.count[k]) area++; }
+  area = Math.round(area*RES*RES);
+  $('#tbArea').textContent = String(area);
+  $('#tbMin').textContent = r ? String(Math.floor(r.time/60)) : '0';
+  const mode = $('#tbMode');
+  mode.textContent = G.phase === 'r2' || G.phase === 'result' && G.r2 ? (r && r.turn ? '자동 유턴' : '자동 경로') : G.phase === 'setup' ? '경로 생성' : '수동 주행';
+  const xv = $('#tbXteV');
+  if (r && G.ab && !r.turn){ const k = Math.round(lineV(r)/F.w); const cm = Math.round((lineV(r) - (r.auto ? r.k : k)*F.w)*100); xv.textContent = String(cm); }
+  else xv.textContent = '-';
+  $('#tbPct').textContent = `${Math.round(area/(F.W*F.L)*100)} %`;
+  const now = new Date(); $('#tbClock').textContent = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  if (r){
+    const set = (id,v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+    set('hudLane', `작업 줄 ${Math.min(r.passes, F.lanes)}/${F.lanes}`); set('hudSteer', `조향 ${r.steer}회 · ${Math.round(r.steerDeg)}°`); set('hudTime', `작업 ${fmtTime(r.time)}`);
+  }
+  if (activeLine && r){ const k = r.turn ? r.turn.k1 : (r.auto ? r.k : Math.round(lineV(r)/F.w)); const c = fromUV(F.L/2, k*F.w); activeLine.position.set(c.x, .04, c.z); }
+  lines2.children.forEach(m => { if (m.userData.yellow !== undefined) m.position.z = m.userData.yellow === 0 ? -G.uOff : F.L + G.uOff; });
+  pinA.visible = pinB.visible = false;
+  if (G.toastT && G.phase === 'r2' && performance.now() - G.toastT > 4500) toast('');
+}
+function renderHud(){
+  const P = G.phase, r = activeRound();
+  $('#controls').hidden = !['r1','r2'].includes(P); $('.pedals').hidden = P !== 'r1';
+  $('#finishBtn').hidden = P !== 'r1';
+  const round = $('#hudRound');
+  if (P === 'r1' || P === 'r1done'){ round.textContent = '1라운드 · 직접 운전'; round.className = 'pill dark'; }
+  else if (['setup','r2','result'].includes(P)){ round.textContent = '2라운드 · pluva iON 자동조향'; round.className = 'pill signal'; }
+  else { round.textContent = 'pluva iON 자동조향 체험'; round.className = 'pill dark'; }
+  $('#hudStats').innerHTML = r ? `<span class="pill" id="hudLane"></span><span class="pill" id="hudSteer"></span><span class="pill" id="hudTime"></span>` : '';
+  const msg = P === 'r1' ? '밭 안에서는 작업기가 내려가고 밭 끝(두렁)에서는 올라갑니다. 끝에서 직접 돌아 다음 줄로 들어가세요.'
+    : P === 'setup' ? '오른쪽 pluva iON 태블릿에서 밭 외곽을 눌러 경계를 만들고 경로를 생성하세요 →'
+    : P === 'r2' ? '핸들과 유턴은 pluva iON이 알아서 합니다. 작업자는 주변과 작업 상태만 살피면 됩니다.' : '';
+  $('#foot').innerHTML = msg ? `<span class="pill">${msg}</span>` : '';
+}
+
+/* =====================================================================
+   모달
+   ===================================================================== */
+const SVG_TRACTOR = '<svg viewBox="0 0 64 40"><circle cx="16" cy="28" r="11" fill="#2b2e31"/><circle cx="16" cy="28" r="5" fill="#b8bec4"/><circle cx="50" cy="32" r="7" fill="#2b2e31"/><circle cx="50" cy="32" r="3" fill="#b8bec4"/><path d="M10 16h14l2-12h14v14h16l2 10H8z" fill="#dfe3e6"/><rect x="28" y="6" width="9" height="10" fill="#2a3a44"/></svg>';
+const SVG_RICE = '<svg viewBox="0 0 64 40"><circle cx="18" cy="31" r="8" fill="#45525c"/><circle cx="46" cy="32" r="6" fill="#45525c"/><path d="M12 22h40l2 6H10z" fill="#dfe3e6"/><rect x="40" y="14" width="12" height="8" fill="#dfe3e6"/><rect x="24" y="12" width="6" height="10" fill="#2b2e31"/><path d="M2 8l12 14H6z" fill="#5aa83c"/></svg>';
+function renderModal(){
+  const P = G.phase, m = $('#modal');
+  if (P === 'title'){
+    m.innerHTML = `<span class="eyebrow">pluva iON · 3D 자동조향 체험</span>
+      <h1>직접 운전과 <em>자동조향</em>,<br>같은 밭에서 비교해보세요</h1>
+      <p class="lead">한 번은 직접 핸들을 잡고, 한 번은 pluva iON 태블릿으로 밭 경계를 찍어 경로를 만든 뒤 자동으로 작업합니다.</p>
+      <p style="font-weight:800;font-size:19px"><span class="qno">1</span>어떤 농기계로 해볼까요?</p>
+      <div class="cards">
+        <button type="button" class="pick" data-act="machine" data-id="tractor"><div class="ico">${SVG_TRACTOR}</div><b>트랙터</b><span>로터리 경운 · 골 작업 · 비닐 피복</span></button>
+        <button type="button" class="pick" data-act="machine" data-id="rice"><div class="ico">${SVG_RICE}</div><b>이앙기</b><span>이앙 (모내기)</span></button>
+      </div>`;
+  } else if (P === 'task'){
+    m.innerHTML = `<span class="eyebrow">트랙터 · 작업 선택</span><h2><span class="qno">2</span>어떤 <em>작업</em>을 해볼까요?</h2>
+      <div class="cards">${MACHINES.tractor.tasks.map(id => `<button type="button" class="pick" data-act="task" data-id="${id}"><b>${TASKS[id].label}</b><span>${TASKS[id].desc}</span><span>작업기: ${TASKS[id].implLabel} · 폭 ${TASKS[id].w}m</span></button>`).join('')}</div>
+      <div class="btn-row"><button type="button" class="btn" data-act="home">농기계 다시 고르기</button></div>`;
+  } else if (P === 'r1intro'){
+    const t = TASKS[G.task];
+    m.innerHTML = `<span class="eyebrow">1라운드 · 직접 운전 · ${MACHINES[G.machine].label} ${t.label}</span><h2>먼저 <em>직접 운전</em>해보세요</h2>
+      <p class="lead">밭을 ${F.lanes}줄로 나눠 작업합니다. 줄을 곧게 맞추고, 줄 끝 두렁에서 직접 돌아 다음 줄로 들어가세요. 앞 줄과 겹치거나 빈틈이 생기지 않게 하는 것이 목표입니다.</p>
+      <div class="keys">
+        <div><span class="key">↑</span>가속 (손을 떼면 그 속도 유지)</div>
+        <div><span class="key">↓</span>감속 · 멈춘 뒤 누르면 후진</div>
+        <div><span class="key">←</span><span class="key">→</span>핸들 (화면 핸들을 잡고 돌려도 됩니다)</div>
+        <div><span class="key">■</span>${F.lanes}줄을 마치거나 '작업 끝내기'를 누르면 종료</div>
+      </div>
+      <div class="btn-row"><button type="button" class="btn primary" data-act="startR1">작업 시작</button><button type="button" class="btn" data-act="home">처음으로</button></div>`;
+  } else if (P === 'r1done'){
+    const s = G.r1.stats;
+    m.innerHTML = `<span class="eyebrow">1라운드 완료</span><h2>직접 운전으로 <em>작업을 마쳤습니다</em></h2>
+      <div class="scores"><div class="score"><small>작업 시간</small><b>${fmtTime(s.time)}</b></div><div class="score"><small>조향 조작</small><b>${s.steer}회</b></div><div class="score"><small>핸들을 돌린 각도</small><b>${s.steerDeg.toLocaleString()}°</b></div>
+        <div class="score"><small>겹쳐서 다시 지나간 면적</small><b>${pct(s.over)}</b></div><div class="score"><small>빈틈으로 남은 면적</small><b>${pct(s.miss)}</b></div><div class="score"><small>평균 운전 속도</small><b>${(G.autoSpeedFrom(G.r1)*3.6/TIME_SCALE).toFixed(1)}km/h</b></div></div>
+      <p class="lead">이번에는 pluva iON으로 해볼게요. 태블릿에서 밭 외곽 모서리를 눌러 경계를 만들고, 경로 생성 후 작업 시작을 누르면 끝입니다. 속도는 방금 운전하신 평균 속도에 맞추고, 유턴할 때는 속도를 줄입니다.</p>
+      <div class="btn-row"><button type="button" class="btn primary" data-act="toSetup">pluva iON으로 작업하기</button></div>`;
+  } else if (P === 'result'){
+    const a = G.r1.stats, b = G.r2.stats;
+    const row = (l, x, y) => `<tr><td>${l}</td><td>${x}</td><td class="ion">${y}</td></tr>`;
+    m.innerHTML = `<span class="eyebrow">체험 결과 · ${MACHINES[G.machine].label} ${TASKS[G.task].label}</span><h2>같은 밭, <em>두 가지 작업 결과</em></h2>
+      <div class="compare"><div class="cmp"><h3>직접 운전</h3><canvas id="cmp1" width="750" height="240"></canvas></div><div class="cmp"><h3 style="color:var(--accent)">pluva iON<br>자동조향</h3><canvas id="cmp2" width="750" height="240"></canvas></div></div>
+      <div class="legend"><span><i style="background:rgb(${RES_COVER})"></i>작업한 곳</span><span><i style="background:rgb(${COL.over})"></i>겹친 곳</span><span><i style="background:rgb(${COL.miss})"></i>빈틈</span></div>
+      <div style="overflow-x:auto"><table class="res"><thead><tr><th>게임 속 기록</th><th>직접 운전</th><th>pluva iON</th></tr></thead><tbody>
+        ${row('작업 시간 (실제 시간 환산)', fmtTime(a.time), fmtTime(b.time))}
+        ${row('사람의 조향 조작', `${a.steer}회`, `${b.steer}회`)}
+        ${row('사람이 핸들을 돌린 각도', `${a.steerDeg.toLocaleString()}°`, `${b.steerDeg.toLocaleString()}°`)}
+        ${row('겹쳐서 다시 지나간 면적', pct(a.over), pct(b.over))}
+        ${row('빈틈으로 남은 면적', pct(a.miss), pct(b.miss))}
+        ${row('주행 속도', `평균 ${(G.autoSpeedFrom(G.r1)*3.6/TIME_SCALE).toFixed(1)}km/h`, `${(G.autoSpeed*3.6/TIME_SCALE).toFixed(1)}km/h (유턴 시 감속)`)}</tbody></table></div>
+      <p class="lead">pluva iON은 반복적인 조향 부담을 줄이고, 경계 설정과 작업 경로 생성·재사용, 작업 조건에 맞는 선회 설정을 도와 농작업을 지원합니다.</p>
+      <div class="btn-row"><button type="button" class="btn primary" data-act="home">처음으로</button></div>
+      <p class="fine">게임 속 결과입니다. 작업 시간은 게임 속도를 실제 속도로 환산한 값이며, 실제 작업 결과는 농기계·작업기·포장 조건과 작업 방식에 따라 달라집니다.</p>
+      <p class="countdown" id="countdown"></p>`;
+    requestAnimationFrame(() => { drawCompare($('#cmp1'), G.r1); drawCompare($('#cmp2'), G.r2); });
+  }
+  $('#overlay').hidden = !['title','task','r1intro','r1done','result'].includes(P);
+}
+function drawCompare(c, r){
+  if (!c || !r) return; const x = c.getContext('2d'); const w = c.width, h = c.height;
+  x.fillStyle = '#F2F4F6'; x.fillRect(0,0,w,h);
+  const k = Math.min((w-20)/F.NZ, (h-20)/F.NX), ox = (w - F.NZ*k)/2, oy = (h - F.NX*k)/2;
+  x.fillStyle = '#DDE1E6'; x.fillRect(ox,oy,F.NZ*k,F.NX*k);
+  // 결과 화면에서는 작업한 곳을 파란색으로 표시
+  const tmp = document.createElement('canvas'); tmp.width = F.NX; tmp.height = F.NZ; const tx = tmp.getContext('2d'); const id = new ImageData(new Uint8ClampedArray(r.img.data), F.NX, F.NZ);
+  for (let i=0;i<id.data.length;i+=4){ if (id.data[i]===COL.cover[0] && id.data[i+1]===COL.cover[1] && id.data[i+2]===COL.cover[2]){ id.data[i]=RES_COVER[0]; id.data[i+1]=RES_COVER[1]; id.data[i+2]=RES_COVER[2]; } }
+  tx.putImageData(id,0,0);
+  x.save(); x.setTransform(0,k,k,0,ox,oy); x.imageSmoothingEnabled = false; x.drawImage(tmp,0,0); x.restore();
+}
+
+/* =====================================================================
+   진행
+   ===================================================================== */
+function chooseMachine(id){
+  G.machine = id;
+  TR1.visible = TR2.visible = id === 'tractor'; RI1.visible = RI2.visible = id === 'rice';
+  T1 = id === 'tractor' ? TR1 : RI1; T2 = id === 'tractor' ? TR2 : RI2;
+}
+function chooseTask(id){ G.task = id; setField(id); attachImpl(T1, id); attachImpl(T2, id); layoutField(id); }
+function setPhase(p){
+  G.phase = p; G.keys.l = G.keys.r = G.keys.u = G.keys.d = false; WH.grab = false;
+  if (p === 'result') G.resultAt = performance.now();
+  renderModal(); renderTablet(); renderHud(); updateLive();
+}
+function goHome(){ G.r1 = G.r2 = null; G.ab = null; G.bound = []; G.pinA = G.pinB = null; G.sub = null; G.uOff = 0; G.uOn = true; buildGuides(); useRound(null); setPhase('title'); }
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+  const act = b.dataset.act;
+  if (act === 'machine'){ chooseMachine(b.dataset.id); if (b.dataset.id === 'rice'){ chooseTask('plant'); setPhase('r1intro'); } else { chooseTask('rotary'); setPhase('task'); } }
+  else if (act === 'task'){ chooseTask(b.dataset.id); setPhase('r1intro'); }
+  else if (act === 'home') goHome();
+  else if (act === 'startR1'){ G.r1 = newRound('manual'); useRound(G.r1); setPhase('r1'); toast('↑ 키(가속)를 눌러 출발하세요.'); }
+  else if (act === 'toSetup'){ G.autoSpeed = G.autoSpeedFrom(G.r1); G.r2 = newRound('ion'); useRound(G.r2); G.sub = 'bound'; G.bound = []; G.ab = null; buildGuides(); camPos.set(laneX(0), 5.2, -16); setPhase('setup'); }
+  else if (act === 'finish'){ const r = activeRound(); if (r && !r.done) finishRound(r); }
+  else if (act === 'tbAct'){
+    const r = G.r2;
+    if (G.phase === 'setup' && G.sub === 'gen'){
+      // 경계를 기준으로 작업폭에 맞는 평행 경로와 유턴 생성
+      G.ab = { A:{ x:laneX(0), z:0 }, d:{ x:0, z:1 }, n:{ x:1, z:0 }, s:1 }; G.uOn = true; G.uOff = 0;
+      buildGuides(); G.sub = 'ready'; renderTablet(); renderHud();
+    }
+    else if (G.phase === 'setup' && G.sub === 'ready'){ setPhase('r2'); engageAuto(r); updateTabletButtons(); }
+    else if (G.phase === 'r2' && !r.done){ r.paused = !r.paused; toast(r.paused ? '일시정지했습니다.' : ''); updateTabletButtons(); }
+  }
+  else if (act === 'uToggle'){ G.uOn = !G.uOn; renderTablet(); }
+  else if (act === 'uMinus'){ G.uOff = Math.max(0, G.uOff - .5); renderTablet(); }
+  else if (act === 'uPlus'){ G.uOff = Math.min(3, G.uOff + .5); renderTablet(); }
+  else if (act === 'uNext' || act === 'panelClose'){ if (G.uOn || act === 'uNext'){ G.sub = 'ready'; renderTablet(); renderHud(); } }
+});
+
+/* =====================================================================
+   입력: 핸들(드래그)·페달 버튼·방향키 4개
+   ===================================================================== */
+const wheelEl = $('#wheel');
+function pAngle(e){ const b = wheelEl.getBoundingClientRect(); return Math.atan2(e.clientY - (b.top + b.height/2), e.clientX - (b.left + b.width/2)) * 180/Math.PI; }
+function humanSteerStart(){
+  const r = activeRound(); if (!r || !canDrive()) return false;
+  if (G.phase === 'r2' && r.auto) disengage(r);
+  r.steer++; return true;
+}
+wheelEl.addEventListener('pointerdown', e => {
+  if (!canDrive()) return; e.preventDefault();
+  if (!humanSteerStart()) return;
+  try { wheelEl.setPointerCapture(e.pointerId); } catch(_){}
+  WH.grab = true; WH.last = pAngle(e);
+});
+wheelEl.addEventListener('pointermove', e => {
+  if (!WH.grab) return; const a = pAngle(e); let d = a - WH.last; if (d > 180) d -= 360; if (d < -180) d += 360;
+  const before = WH.angle; WH.angle = clamp(WH.angle + d, -WH.max, WH.max); WH.last = a;
+  const r = activeRound(); if (r) r.steerDeg += Math.abs(WH.angle - before);
+});
+['pointerup','pointercancel','lostpointercapture'].forEach(ev => wheelEl.addEventListener(ev, () => { WH.grab = false; }));
+wheelEl.addEventListener('contextmenu', e => e.preventDefault());
+function pedal(el, key){
+  el.addEventListener('pointerdown', e => { e.preventDefault(); if (!canDrive()) return; try { el.setPointerCapture(e.pointerId); } catch(_){} G.keys[key] = true; el.classList.add('on'); });
+  ['pointerup','pointercancel','lostpointercapture'].forEach(ev => el.addEventListener(ev, () => { G.keys[key] = false; el.classList.remove('on'); }));
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+pedal($('#pedUp'), 'u'); pedal($('#pedDn'), 'd');
+const KEYMAP = { ArrowLeft:'l', ArrowRight:'r', ArrowUp:'u', ArrowDown:'d' };
+document.addEventListener('keydown', e => {
+  G.last = performance.now(); const k = KEYMAP[e.key]; if (!k) return;
+  e.preventDefault(); if (e.repeat || !canDrive()) return;
+  if ((k === 'l' || k === 'r') && !humanSteerStart()) return;
+  G.keys[k] = true; if (k === 'u') $('#pedUp').classList.add('on'); if (k === 'd') $('#pedDn').classList.add('on');
+});
+document.addEventListener('keyup', e => { const k = KEYMAP[e.key]; if (!k) return; G.keys[k] = false; if (k === 'u') $('#pedUp').classList.remove('on'); if (k === 'd') $('#pedDn').classList.remove('on'); });
+document.addEventListener('pointerdown', () => { G.last = performance.now(); }, true);
+function updateWheel(dt){
+  const r = activeRound();
+  if (r && r.auto){ WH.angle += (-(r.delta/DMAX)*WH.max - WH.angle)*Math.min(1, dt*5); }
+  else if (canDrive()){
+    const k = (G.keys.r ? 1 : 0) - (G.keys.l ? 1 : 0);
+    if (k){ const before = WH.angle; WH.angle = clamp(WH.angle + k*300*dt, -WH.max, WH.max); if (r) r.steerDeg += Math.abs(WH.angle - before); }
+    else if (!WH.grab) WH.angle -= WH.angle*Math.min(1, dt*1.4);
+  } else WH.angle -= WH.angle*Math.min(1, dt*4);
+  wheelEl.style.transform = `rotate(${WH.angle.toFixed(1)}deg)`;
+  wheelEl.setAttribute('aria-valuenow', String(Math.round(WH.angle)));
+  const auto = !!(r && r.auto);
+  $('#wheelWrap').classList.toggle('auto', auto);
+  const hint = auto ? 'pluva iON이 조향 중' : '핸들을 잡고 돌리세요'; const h = $('#wheelHint'); if (h.textContent !== hint) h.textContent = hint;
+}
+
+/* 태블릿 지도: 밭 외곽 모서리 누르기 */
+mapC.addEventListener('pointerdown', e => {
+  if (G.phase !== 'setup' || G.sub !== 'bound') return;
+  const b = mapC.getBoundingClientRect(), px = (e.clientX - b.left)/K, py = (e.clientY - b.top)/K, V = mapView();
+  let best = -1, bd = 1e9;
+  CORNERS().forEach((p,i) => { if (G.bound.includes(i)) return; const [X,Y] = toMap(V,p[0],p[1]); const d = Math.hypot(X-px, Y-py); if (d < bd){ bd = d; best = i; } });
+  if (best >= 0 && bd < 60){ G.bound.push(best); if (G.bound.length === 4) G.sub = 'gen'; renderTablet(); }
+});
+mapC.style.touchAction = 'none';
+
+/* 크기 맞추기 */
+function resize(){
+  const w = $('#world'); R1.setPixelRatio(DPR()); R1.setSize(w.clientWidth, w.clientHeight, false); cam1.aspect = w.clientWidth / Math.max(1, w.clientHeight); cam1.updateProjectionMatrix();
+  const f = $('#tbFrame'); K = f.clientWidth / 960; $('#tb').style.transform = `scale(${K})`;
+  R2.setPixelRatio(DPR()*K); R2.setSize(320, 540, false);
+}
+new ResizeObserver(resize).observe(document.body); resize();
+
+/* =====================================================================
+   루프
+   ===================================================================== */
+let prevT = performance.now();
+function tick(now){
+  const dt = Math.min(.05, (now - prevT)/1000); prevT = now;
+  const r = activeRound();
+  if (G.phase === 'r1') stepRound(G.r1, dt);
+  if (G.phase === 'r2' || G.phase === 'setup') stepRound(G.r2, dt);
+  updateWheel(dt); syncModel(T1, r, dt); syncModel(T2, r, dt);
+  for (let i=0;i<DUST_N;i++){ const d = dust[i]; if (d.life > 0){ d.life -= dt*.9; d.x += d.vx*dt; d.y += d.vy*dt; d.z += d.vz*dt; }
+    dustP[i*3] = d.x; dustP[i*3+1] = d.life > 0 ? d.y : -10; dustP[i*3+2] = d.z; }
+  dustG.attributes.position.needsUpdate = true;
+  updateCameras(dt);
+  if (r && r.dirty){ r.ctx.putImageData(r.img,0,0); r.tex.needsUpdate = true; r.dirty = false; }
+  R1.render(S1, cam1); R2.render(S2, cam2); drawMap(); updateLive();
+  if (G.phase === 'result'){
+    const left = Math.ceil((RESULT_MS - (now - Math.max(G.resultAt, G.last)))/1000);
+    const cd = $('#countdown'); if (cd) cd.textContent = `${Math.max(0,left)}초 동안 아무 조작이 없으면 처음 화면으로 돌아갑니다.`;
+    if (left <= 0) goHome();
+  } else if (G.phase !== 'title' && !(G.phase === 'r2' && G.r2 && !G.r2.paused) && now - G.last > IDLE_MS) goHome();
+  requestAnimationFrame(tick);
+}
+chooseMachine('tractor'); chooseTask('rotary'); setPhase('title'); requestAnimationFrame(tick);
+</script>
+</body>
+</html>
