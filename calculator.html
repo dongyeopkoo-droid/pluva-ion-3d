@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>pluva iON 효과 계산기</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Poppins:wght@500;600;700&display=swap">
+<style>
+/* Layout: pluva iON 웹사이트 톤(검정 바탕·스틸 블루 숫자·네이비 버튼)으로 고정한 한 열 단계형 계산기. 아래 고정 막대에 실시간 미리보기와 이동 버튼. */
+:root{
+  color-scheme:dark;
+  --bg:#000000; --surface:#0E1013; --surface-2:#171A1F; --ink:#F2F4F6; --muted:#97A2AD; --line:#2A2E33;
+  --accent:#8FB8D6; --steel:#6F8FA8; --navy:#003A9A;
+  --grad-text:linear-gradient(180deg,#B4D3E8 0%,#6E9EC4 55%,#2E5E96 100%);
+  --grad-btn:linear-gradient(90deg,#1C2025 0%,#1D232A 45%,#003A9A 100%);
+  --ok:#7CC79A; --warn:#F0AE63; --err:#F08A7E;
+  --font:"Noto Sans KR","Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --num:"Poppins","Noto Sans KR",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere;letter-spacing:-.01em}
+.wrap{max-width:720px;margin:0 auto;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:28px 150px}
+h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
+p{margin:0}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+
+header .brand{font-family:var(--num);font-weight:600;font-size:15px;color:var(--accent)}
+header h1{font-size:clamp(24px,5.6vw,34px);font-weight:900;margin-top:6px;letter-spacing:-.03em}
+header .lead{color:var(--muted);margin-top:10px;font-size:15.5px;max-width:52ch}
+
+.progress{margin-top:26px;display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.progress button{display:flex;flex-direction:column;gap:7px;text-align:left;padding:0}
+.progress button:disabled{cursor:default}
+.progress .bar{height:3px;background:var(--line)}
+.progress .done .bar{background:var(--steel)}
+.progress .cur .bar{background:var(--accent)}
+.progress .lbl{font-size:13px;color:var(--muted)}
+.progress .cur .lbl{color:#fff;font-weight:700}
+
+main{margin-top:26px}
+.panel{display:flex;flex-direction:column;gap:22px}
+.q .step{font-size:14px;color:var(--accent);font-weight:500}
+.q h2{font-size:clamp(21px,4.6vw,26px);font-weight:800;margin-top:4px;letter-spacing:-.02em}
+.q .sub{color:var(--muted);font-size:15px;margin-top:6px}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.card{display:flex;flex-direction:column;gap:2px;text-align:left;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:8px;min-height:76px}
+.card b{font-size:17px;font-weight:700}
+.card span{font-size:13px;color:var(--muted)}
+.card[aria-pressed="true"]{border-color:var(--accent);background:#0F1A26;box-shadow:inset 0 0 0 1px var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:10px 16px;border:1px solid var(--line);background:var(--surface);border-radius:999px;font-size:15px;font-weight:500}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:#0F1A26;color:#fff;box-shadow:inset 0 0 0 1px var(--accent)}
+.block{display:flex;flex-direction:column;gap:10px}
+.block > .lbl{font-weight:700;font-size:15.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tag{font-size:11.5px;font-weight:500;padding:1px 8px;border-radius:4px;border:1px solid var(--line);color:var(--muted)}
+.tag.req{border-color:var(--steel);color:var(--accent)}
+.hint{font-size:13.5px;color:var(--muted)}
+.notice{padding:12px 14px;border:1px solid var(--line);border-radius:8px;font-size:14px;color:#C9D1D8;background:var(--surface)}
+.notice.check{border-color:#5a4426;color:#F3C78E;background:#17120B}
+.notice.ok{border-color:#2B4A38;color:#A9DDBE;background:#0D1712}
+
+.field{display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow:hidden;max-width:420px}
+.field:focus-within{border-color:var(--accent)}
+.field.err{border-color:var(--err)}
+.field input{flex:1;min-width:0;background:transparent;border:0;color:#fff;font:600 20px/1.2 var(--num);padding:13px 14px;outline:none;font-variant-numeric:tabular-nums}
+.field .unit{padding:0 14px;color:var(--muted);font-size:15px;white-space:nowrap}
+.field .stp{width:52px;align-self:stretch;font-size:22px;color:#fff;background:var(--surface-2)}
+.field .stp:active{background:#22272e}
+.text{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:8px;color:#fff;font:16px/1.4 var(--font);padding:12px 14px}
+.text:focus{border-color:var(--accent);outline:none}
+textarea.text{min-height:84px;resize:vertical;max-width:none}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:520px){.row2{grid-template-columns:1fr}}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;align-self:flex-start}
+.seg button{padding:8px 14px;font-size:14px;color:var(--muted);background:var(--surface)}
+.seg button + button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:#0F1A26;color:#fff;font-weight:700}
+.msg{font-size:13.5px;margin-top:-4px}
+.msg:empty{display:none}
+.msg.error{color:var(--err)}
+.msg.warn{color:var(--warn)}
+.msg.info{color:var(--muted)}
+.compare{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:start}
+.compare .arrow{padding-top:40px;color:var(--muted);font-size:20px}
+.compare .field{max-width:none}
+.compare small{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+@media (max-width:520px){.compare{grid-template-columns:1fr}.compare .arrow{display:none}}
+details.more{border-top:1px solid var(--line);padding-top:14px}
+details.more summary{cursor:pointer;font-weight:700;font-size:15px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary::after{content:"+";font-family:var(--num);color:var(--accent);font-size:20px}
+details.more[open] summary::after{content:"−"}
+details.more .inner{display:flex;flex-direction:column;gap:20px;margin-top:16px}
+.yn{display:flex;gap:8px}
+.yn .chip{min-width:84px;text-align:center}
+.sub-block{display:flex;flex-direction:column;gap:18px;padding:16px;border:1px solid var(--line);border-radius:8px;background:#07080A}
+.checkline{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+.checkline input{width:18px;height:18px;margin-top:2px;accent-color:#6FA3C8;flex:none}
+
+/* 하단 막대 */
+.bottom{position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(0,0,0,.94);border-top:1px solid var(--line);
+  padding-top:10px;padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px));padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.bottom .in{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+.preview{font-size:14px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap;align-items:baseline}
+.preview b{font-family:var(--num);background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;font-size:17px;margin-left:4px}
+.preview:empty{display:none}
+.nav{display:flex;gap:10px}
+.btn{min-height:54px;padding:12px 20px;border-radius:8px;border:1px solid #3A3F45;font-weight:700;font-size:16px;color:#fff}
+.btn.primary{flex:1;background:var(--grad-btn);border:2px solid var(--steel)}
+.btn.small{min-height:44px;font-size:14.5px;padding:8px 14px}
+.form-error{font-size:14px;color:var(--err)}
+
+/* 결과 */
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.kpi{padding:22px 10px;text-align:center;display:flex;flex-direction:column;gap:8px;justify-content:center}
+.kpi + .kpi{border-left:1px solid var(--line)}
+.kpi .v{font-family:var(--num);font-weight:700;font-size:clamp(22px,5.6vw,32px);line-height:1.15;background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums}
+.kpi .v.neg{background:none;color:var(--err)}
+.kpi .v.na{background:none;color:var(--muted);font-family:var(--font);font-size:14px;font-weight:500;line-height:1.5}
+.kpi .k{font-size:13.5px;color:#C5CDD4}
+@media (max-width:520px){.kpis{grid-template-columns:1fr}.kpi + .kpi{border-left:0;border-top:1px solid var(--line)}}
+.detail{display:flex;flex-direction:column}
+.drow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;padding:16px 0;border-bottom:1px solid var(--line)}
+.drow h3{font-size:15.5px;font-weight:700}
+.drow .val{font-family:var(--num);font-weight:600;font-size:17px;text-align:right;font-variant-numeric:tabular-nums}
+.drow .val.pos{color:var(--accent)}
+.drow .val.neg{color:var(--err)}
+.drow .val.na{font-family:var(--font);font-weight:500;font-size:14px;color:var(--muted)}
+.drow .val.na,.drow .val.long{grid-column:1/-1;text-align:left}
+.compare > div{min-width:0}
+.field input{width:100%}
+.drow .basis{grid-column:1/-1;font-size:13.5px;color:var(--muted)}
+.drow .ref{font-size:11.5px;border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--muted);margin-left:6px;font-weight:500}
+.sum{display:flex;flex-direction:column;gap:12px;padding:18px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.sum h3{font-size:16px}
+.sum .sh{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.sum .sh b{font-size:14px;color:var(--muted)}
+.link{color:var(--accent);font-weight:700;font-size:14px;text-decoration:underline;text-underline-offset:3px;padding:4px 0}
+dl.kv{margin:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;font-size:14.5px}
+dl.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+dl.kv dd.empty{color:var(--muted)}
+dl.kv dd small{color:var(--muted);margin-left:4px;font-size:12px}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.toast{font-size:14px;color:var(--ok)}
+.toast:empty{display:none}
+.confirm{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid #5a2a26;border-radius:8px;background:#170C0B}
+.fine{font-size:13px;color:#6E7781;margin-top:30px;display:flex;flex-direction:column;gap:6px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="brand">pluva iON</div>
+    <h1>내 농작업에 맞는 pluva iON 효과 계산하기</h1>
+    <p class="lead">농기계와 작물, 작업 조건을 선택해보세요. 내 농장에서 예상되는 작업시간과 비용 변화를 직접 계산해볼 수 있습니다.</p>
+  </header>
+  <nav class="progress" id="progress" aria-label="진행 단계"></nav>
+  <main id="app" aria-live="polite"></main>
+  <div class="fine">
+    <p>입력하신 값만으로 계산한 참고 결과입니다. 비워둔 항목은 추정하지 않고 계산에서 뺍니다. 실제 결과는 농기계·작업기·포장 조건에 따라 달라질 수 있습니다.</p>
+    <p>pluva iON은 반복적인 조향 부담을 줄이고, 경계 설정과 작업 경로 생성·재사용, 작업 조건에 맞는 선회 설정을 도와 농작업을 지원하는 자동조향 장치입니다.</p>
+  </div>
+</div>
+<div class="bottom"><div class="in"><div class="preview" id="preview"></div><div class="nav" id="nav"></div></div></div>
+
+<script>
+/* =====================================================================
+   선택 목록 데이터 — 항목 추가·수정은 여기만 고치면 됩니다.
+   ===================================================================== */
+const CATALOG = {
+  machines: [
+    { id:'tractor', label:'트랙터', desc:'경운·파종·방제 등', crops:['rice','yam','burdock'],
+      tasks:['mulching','plowing','rotary','seeding','fertilizing','spraying','ridging','lowspeed'],
+      implements:['mulcher','plow','rotary','seeder','spreader','sprayer','ridger'] },
+    { id:'transplanter', label:'이앙기', desc:'벼 모내기', crops:['rice'], tasks:['riceplanting'], implements:['builtin'] },
+    { id:'planter', label:'정식기', desc:'모종 아주심기', crops:['greenonion'], tasks:['planting'], implements:['builtin'] },
+    { id:'ridingcultivator', label:'승용관리기', desc:'관리·방제', crops:[], tasks:[], implements:[], verifyRequired:true },
+    { id:'other', label:'기타 농기계', desc:'직접 입력', crops:[], tasks:[], implements:[], verifyRequired:true },
+  ],
+  crops: { rice:'벼', yam:'마', burdock:'우엉', greenonion:'대파' },
+  tasks: {
+    mulching:{ label:'피복', implements:['mulcher'] }, plowing:{ label:'쟁기', implements:['plow'] },
+    rotary:{ label:'로터리·경운', implements:['rotary'] }, seeding:{ label:'파종', implements:['seeder'] },
+    fertilizing:{ label:'시비', implements:['spreader'] }, spraying:{ label:'방제', implements:['sprayer'] },
+    ridging:{ label:'두둑·고랑', implements:['ridger'] }, lowspeed:{ label:'마·우엉 저속 작업', crops:['yam','burdock'], implements:[] },
+    riceplanting:{ label:'이앙', implements:['builtin'] }, planting:{ label:'정식', implements:['builtin'] },
+  },
+  implements: { mulcher:'피복기', plow:'쟁기', rotary:'로터리', seeder:'파종기', spreader:'비료살포기', sprayer:'분무기', ridger:'두둑성형기', builtin:'기본 장착 작업기' },
+};
+/* 내부 호환 목록 — 실제 확인된 조합만 등록하세요. (초기 예시이므로 검증 후 수정 필요) */
+const COMPATIBILITY = [
+  { machine:'tractor', task:'mulching', implement:'mulcher' }, { machine:'tractor', task:'plowing', implement:'plow' },
+  { machine:'tractor', task:'rotary', implement:'rotary' }, { machine:'tractor', task:'seeding', implement:'seeder' },
+  { machine:'tractor', task:'fertilizing', implement:'spreader' }, { machine:'tractor', task:'spraying', implement:'sprayer' },
+  { machine:'tractor', task:'ridging', implement:'ridger' },
+  { machine:'transplanter', task:'riceplanting', implement:'builtin', crops:['rice'] },
+  { machine:'planter', task:'planting', implement:'builtin', crops:['greenonion'] },
+];
+const STEPS = ['농기계','작업','작업시간','비용','결과'];
+const PYEONG_PER_HA = 3025;
+const STORE_KEY = 'pluvaIonCalc.v2';
+
+/* 입력 항목 */
+const FIELDS = {
+  area:{ unit:()=>S.unit, warnMax:()=>S.unit==='ha'?300:900000, req:true, positive:true },
+  runs:{ unit:'회', integer:true, step:1, warnMax:60, req:true, positive:true },
+  cur: { unit:'시간', step:.5, warnMax:300, req:true, positive:true },
+  ion: { unit:'시간', step:.5, warnMax:300, req:true },
+  dayHours:{ unit:'시간', max:24 },
+  init:{ unit:'만원', money:true, warnMax:50000 },
+  op:  { unit:'만원', money:true, warnMax:10000 },
+  workers:{ unit:'명', integer:true, step:1, warnMax:20 },
+  wage:{ unit:'원', won:true, warnMax:300000 },
+  reworkCur:{ unit:()=>S.unit, warnMax:()=>S.unit==='ha'?300:900000 },
+  reworkIon:{ unit:()=>S.unit, warnMax:()=>S.unit==='ha'?300:900000 },
+  reworkCost:{ unit:'원', won:true },
+  selfRate:{ unit:'원', won:true, warnMax:300000 },
+  extraIncome:{ unit:'만원', money:true },
+  extraCost:{ unit:'만원', money:true },
+};
+
+/* =====================================================================
+   상태
+   ===================================================================== */
+const blank = () => ({ step:0, maxStep:0, unit:'ha',
+  sel:{ machine:null, machineCustom:'', crop:null, cropCustom:'', task:null, taskCustom:'', implement:null, implementCustom:'' },
+  v:{}, timeType:null, selfDrive:true, rework:false, laborInRework:false, extra:false,
+  text:{ machineMaker:'', machineModel:'', implMaker:'', implModel:'', width:'', notes:'' }, tried:{} });
+let S = blank();
+try { const o = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (o) S = Object.assign(blank(), o, { tried:{} }); } catch(e){}
+const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch(e){} };
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const val = x => typeof x === 'function' ? x() : x;
+const machine = () => CATALOG.machines.find(m => m.id === S.sel.machine) || null;
+const comma = n => n.toLocaleString('ko-KR', { maximumFractionDigits:2 });
+const r1 = n => Math.round(n*10)/10;
+
+function parse(raw){
+  if (raw === undefined || raw === null) return { ok:true, v:null };
+  const s = String(raw).replace(/[,\s]/g,''); if (s === '') return { ok:true, v:null };
+  if (!/^-?(\d+\.?\d*|\.\d+)$/.test(s)) return { ok:false, v:null };
+  return { ok:true, v:Number(s) };
+}
+const num = k => { const p = parse(S.v[k]); return p.ok ? p.v : null; };
+function label(kind){
+  const id = S.sel[kind]; if (!id) return '';
+  if (id === 'other') return S.sel[kind+'Custom'].trim() || '직접 입력';
+  if (kind === 'machine') return machine()?.label || '';
+  if (kind === 'crop') return CATALOG.crops[id] || '';
+  if (kind === 'task') return CATALOG.tasks[id]?.label || '';
+  return CATALOG.implements[id] || '';
+}
+function taskOptions(){ const m = machine(); if (!m) return []; return m.tasks.filter(t => { const c = CATALOG.tasks[t].crops; return !c || !S.sel.crop || S.sel.crop === 'other' || c.includes(S.sel.crop); }); }
+function compat(){
+  const m = machine(); if (!m) return { ok:false, why:'' };
+  if (m.verifyRequired) return { ok:false, why: m.id === 'other' ? '직접 입력한 농기계는 기종 확인이 필요합니다.' : '승용관리기는 기종별로 지원 작업이 달라 확인이 필요합니다.' };
+  const { crop, task, implement } = S.sel;
+  if ([crop, task, implement].includes('other')) return { ok:false, why:'직접 입력한 항목이 있어 기종과 작업 조건 확인이 필요합니다.' };
+  const hit = COMPATIBILITY.find(c => c.machine === m.id && c.task === task && c.implement === implement && (!c.crops || c.crops.includes(crop)));
+  return hit ? { ok:true, why:'' } : { ok:false, why:'아직 확인 목록에 없는 조합입니다.' };
+}
+
+/* 표시 형식 */
+function won(v){
+  const sign = v < 0 ? '−' : ''; const a = Math.abs(v);
+  if (a < 10000) return `${sign}${comma(Math.round(a))}원`;
+  if (a >= 1e8){ const e = Math.floor(a/1e8), m = Math.round((a - e*1e8)/1e4); const exact = Math.abs(e*1e8 + m*1e4 - a) < .5; return `${exact?'':'약 '}${sign}${comma(e)}억${m ? ' '+comma(m)+'만' : ''} 원`; }
+  const m = a/1e4, sh = m >= 100 ? Math.round(m) : r1(m), exact = Math.abs(sh*1e4 - a) < .5;
+  return `${exact?'':'약 '}${sign}${comma(sh)}만 원`;
+}
+const hours = h => `${comma(r1(h))}시간`;
+function period(y){ const mo = y*12; if (mo < 1) return '1개월 이내'; if (y < 1) return `약 ${Math.round(mo)}개월`; return `약 ${comma(r1(y))}년`; }
+const signed = v => v > 0 ? `+${won(v)}` : won(v);
+
+/* 검증 */
+function check(key, showReq){
+  const f = FIELDS[key], p = parse(S.v[key]);
+  if (!p.ok) return { lv:'error', t:'숫자만 입력해 주세요. 예: 2.5' };
+  if (p.v === null) return (f.req && showReq) ? { lv:'error', t:'꼭 입력해 주세요.' } : null;
+  if (p.v < 0) return { lv:'error', t:'0 이상으로 입력해 주세요.' };
+  if (f.integer && !Number.isInteger(p.v)) return { lv:'error', t:'정수로 입력해 주세요.' };
+  if (f.max !== undefined && p.v > f.max) return { lv:'error', t:`${f.max}${val(f.unit)} 이하로 입력해 주세요.` };
+  if (f.positive && p.v === 0) return { lv:'error', t:'0보다 큰 값을 입력해 주세요.' };
+  if (key === 'ion'){ const c = num('cur'); if (c !== null && p.v > c) return { lv:'warn', t:'지금보다 오래 걸리는 것으로 계산됩니다. 맞는지 확인해 주세요.' }; }
+  if (key === 'reworkIon'){ const c = num('reworkCur'); if (c !== null && p.v > c) return { lv:'warn', t:'지금보다 재작업이 늘어나는 것으로 계산됩니다.' }; }
+  if (f.warnMax !== undefined && p.v > val(f.warnMax)) return { lv:'warn', t:'값이 아주 큽니다. 단위를 다시 확인해 주세요.' };
+  if (f.money && p.v > 0) return { lv:'info', t:`= ${comma(Math.round(p.v*1e4))}원` };
+  if (key === 'area' && p.v > 0) return { lv:'info', t: S.unit === 'ha' ? `= 약 ${comma(Math.round(p.v*PYEONG_PER_HA))}평` : `= 약 ${comma(Math.round(p.v/PYEONG_PER_HA*100)/100)}ha` };
+  return null;
+}
+function paint(key){
+  const el = document.getElementById('m-'+key); if (!el) return;
+  const r = check(key, !!S.tried[S.step]); el.className = 'msg' + (r ? ' '+r.lv : ''); el.textContent = r ? r.t : '';
+  const box = document.getElementById('f-'+key)?.closest('.field'); if (box) box.classList.toggle('err', r?.lv === 'error');
+}
+
+/* =====================================================================
+   계산
+   ===================================================================== */
+function calc(){
+  const R = {};
+  const runs = num('runs'), cur = num('cur'), ion = num('ion');
+  R.saved = (cur !== null && ion !== null && runs !== null) ? (cur - ion)*runs : null;
+  const day = num('dayHours'); R.days = (R.saved !== null && day) ? R.saved/day : null;
+  if (S.rework){ const a = num('reworkCur'), b = num('reworkIon'), c = num('reworkCost');
+    R.reArea = (a !== null && b !== null) ? a - b : null; R.reSave = (R.reArea !== null && c !== null) ? R.reArea*c : null; }
+  else { R.reArea = R.reSave = null; }
+  const workers = num('workers'), wage = num('wage');
+  R.paidHours = (workers && R.saved !== null) ? Math.max(0, R.saved)*workers : null;
+  R.paidSave = (R.paidHours !== null && wage !== null) ? R.paidHours*wage : null;
+  const op = num('op'); R.op = op !== null ? op*1e4 : null;
+  R.hasCash = R.reSave !== null || R.paidSave !== null || R.op !== null;
+  R.net = R.hasCash ? (R.reSave||0) + (R.paidSave||0) - (R.op||0) : null;
+  R.selfHours = (S.selfDrive && R.saved !== null) ? Math.max(0, R.saved) : null;
+  const sr = num('selfRate'); R.selfValue = (S.selfDrive && R.selfHours !== null && sr !== null) ? R.selfHours*sr : null;
+  if (S.extra){ const i = num('extraIncome'), c = num('extraCost'); R.extra = (i !== null || c !== null) ? ((i||0) - (c||0))*1e4 : null; } else R.extra = null;
+  const init = num('init'); R.init = init !== null ? init*1e4 : null;
+  R.pay = R.init === null ? 'noInit' : R.net === null ? 'noNet' : R.net <= 0 ? 'neg' : 'ok';
+  if (R.pay === 'ok') R.years = R.init / R.net;
+  Object.assign(R, { runs, cur, ion, day, workers, wage, sr });
+  return R;
+}
+
+/* =====================================================================
+   화면 조각
+   ===================================================================== */
+function numField(key, opts={}){
+  const f = FIELDS[key], v = S.v[key] ?? '', u = val(f.unit), stp = f.step !== undefined;
+  return `<div class="field">${stp ? `<button type="button" class="stp" data-stepper="${key}" data-d="-1" aria-label="줄이기">−</button>` : ''}
+    <input id="f-${key}" data-key="${key}" type="text" inputmode="${f.integer?'numeric':'decimal'}" autocomplete="off" value="${esc(v)}" placeholder="${esc(opts.ph||'')}" aria-label="${esc(opts.aria||'')}" aria-describedby="m-${key}">
+    <span class="unit">${esc(u)}</span>${stp ? `<button type="button" class="stp" data-stepper="${key}" data-d="1" aria-label="늘리기">+</button>` : ''}</div>
+    <p class="msg" id="m-${key}"></p>`;
+}
+function block(lbl, inner, { req=false, hint='', tag=true }={}){
+  return `<div class="block"><div class="lbl">${lbl}${tag ? (req ? '<span class="tag req">필수</span>' : '<span class="tag">선택</span>') : ''}</div>${hint ? `<p class="hint">${hint}</p>` : ''}${inner}</div>`;
+}
+const chip = (kind, id, text, on) => `<button type="button" class="chip" data-pick="${kind}" data-id="${id}" aria-pressed="${on}">${esc(text)}</button>`;
+const seg = (name, opts, cur) => `<div class="seg" role="group">${opts.map(([v,t]) => `<button type="button" data-seg="${name}" data-v="${v}" aria-pressed="${cur===v}">${t}</button>`).join('')}</div>`;
+const yn = (name, cur) => `<div class="yn">${[['1','예'],['0','아니요']].map(([v,t]) => `<button type="button" class="chip" data-yn="${name}" data-v="${v}" aria-pressed="${(cur?'1':'0')===v}">${t}</button>`).join('')}</div>`;
+const custom = (kind, ph) => S.sel[kind] === 'other' ? `<input class="text" data-custom="${kind}" id="c-${kind}" value="${esc(S.sel[kind+'Custom'])}" placeholder="${esc(ph)}" autocomplete="off">` : '';
+const txt = (key, ph) => `<input class="text" data-text="${key}" id="t-${key}" value="${esc(S.text[key])}" placeholder="${esc(ph)}" autocomplete="off">`;
+
+const VIEWS = [
+  // 1 농기계
+  () => `<section class="panel">
+    <div class="q"><div class="step">1 / 4</div><h2>어떤 농기계에 pluva iON을 장착하실 예정인가요?</h2><p class="sub">pluva iON을 다는 본체를 골라주세요.</p></div>
+    <div class="cards">${CATALOG.machines.map(m => `<button type="button" class="card" data-pick="machine" data-id="${m.id}" aria-pressed="${S.sel.machine===m.id}"><b>${m.label}</b><span>${m.desc}</span></button>`).join('')}</div>
+    ${custom('machine','농기계 이름 (예: 콤바인)')}
+    <div id="ferr"></div>
+  </section>`,
+  // 2 작업
+  () => { const m = machine(); const crops = m?.crops || [], tasks = taskOptions();
+    const pref = (S.sel.task && CATALOG.tasks[S.sel.task]?.implements) || [];
+    const impls = m ? [...m.implements].sort((a,b) => (pref.includes(b)?1:0) - (pref.includes(a)?1:0)) : [];
+    const c = compat(), t = S.text;
+    return `<section class="panel">
+    <div class="q"><div class="step">2 / 4 · ${esc(label('machine'))}</div><h2>어떤 작물에 어떤 작업을 하시나요?</h2><p class="sub">해당하는 것을 하나씩 눌러주세요. 목록에 없으면 '직접 입력'을 누르세요.</p></div>
+    ${m?.verifyRequired ? `<div class="notice check">기종과 작업 조건 확인 필요 · 작물과 작업을 적어주시면 확인 후 안내해드립니다.</div>` : ''}
+    ${block('작물', `<div class="chips">${crops.map(id => chip('crop', id, CATALOG.crops[id], S.sel.crop===id)).join('')}${chip('crop','other','직접 입력',S.sel.crop==='other')}</div>${custom('crop','작물 이름 (예: 콩)')}`, { req:true })}
+    ${block('농작업', `<div class="chips">${tasks.map(id => chip('task', id, CATALOG.tasks[id].label, S.sel.task===id)).join('')}${chip('task','other','직접 입력',S.sel.task==='other')}</div>${custom('task','작업 이름 (예: 배토)')}`, { req:true })}
+    ${block('작업기', `<div class="chips">${impls.map(id => chip('implement', id, CATALOG.implements[id], S.sel.implement===id)).join('')}${chip('implement','other','직접 입력',S.sel.implement==='other')}</div>${custom('implement','작업기 이름')}`, { req:true, hint:'농기계에 연결해 실제로 작업하는 장비입니다. 작업을 고르면 주로 쓰는 작업기가 먼저 선택됩니다.' })}
+    ${S.sel.implement ? `<div class="notice ${c.ok ? 'ok' : 'check'}">${c.ok ? '확인 목록에 있는 조합입니다. 실제 설치 가능 여부는 기종 확인 후 안내해드립니다.' : `호환 여부 확인 필요 · ${esc(c.why)} 계산은 그대로 하실 수 있습니다.`}</div>` : ''}
+    <details class="more"${t.machineMaker||t.machineModel||t.implMaker||t.implModel||t.width ? ' open' : ''}><summary>기종 정보도 알려주기 (선택)</summary><div class="inner">
+      <p class="hint">농기계와 작업기 조합에 따라 설치 및 사용 가능 여부가 달라질 수 있습니다. 정확한 적용 가능 여부는 기종과 작업 조건을 확인한 뒤 안내해드립니다.</p>
+      ${block('농기계 제조사·모델', `<div class="row2">${txt('machineMaker','제조사')}${txt('machineModel','모델명')}</div>`, { tag:false })}
+      ${block('작업기 제조사·모델', `<div class="row2">${txt('implMaker','제조사')}${txt('implModel','모델명')}</div>`, { tag:false })}
+      ${block('작업기 폭', txt('width','예: 2.4m'), { tag:false })}
+    </div></details>
+    <div id="ferr"></div>
+  </section>`; },
+  // 3 작업시간
+  () => `<section class="panel">
+    <div class="q"><div class="step">3 / 4 · ${esc(label('machine'))} ${esc(label('task'))}</div><h2>작업 규모와 시간을 알려주세요</h2><p class="sub">재 본 값이나 예상하시는 값을 넣어주세요. 30분은 0.5시간입니다.</p></div>
+    ${block('한 번 작업하는 면적', `${seg('unit',[['ha','ha'],['평','평']],S.unit)}${numField('area',{ph:S.unit==='ha'?'예: 2':'예: 6000', aria:'한 번 작업하는 면적'})}`, { req:true })}
+    ${block('1년에 몇 번 하나요?', numField('runs',{ph:'예: 2', aria:'연간 작업 횟수'}), { req:true })}
+    ${block('한 번 할 때 걸리는 시간', `<div class="compare"><div><small>지금</small>${numField('cur',{ph:'예: 6', aria:'지금 1회 작업시간'})}</div><div class="arrow" aria-hidden="true">→</div><div><small>pluva iON 사용 시 (예상)</small>${numField('ion',{ph:'예: 5', aria:'pluva iON 사용 시 1회 작업시간'})}</div></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="hint">이 시간은</span>${seg('timeType',[['실측값','실측값'],['예상값','예상값']],S.timeType)}</div>`, { req:true, hint:'정해진 절감률은 쓰지 않습니다. 직접 생각하시는 시간을 넣어주세요.' })}
+    <details class="more"${S.v.dayHours ? ' open' : ''}><summary>절감 시간을 일수로도 보기 (선택)</summary><div class="inner">
+      ${block('하루에 일하는 시간', numField('dayHours',{ph:'예: 8', aria:'하루 작업시간'}), { tag:false })}
+    </div></details>
+    ${block('작업 조건 메모', `<textarea class="text" data-text="notes" id="t-notes" placeholder="예: 경사 있는 밭, 두둑 간격 120cm">${esc(S.text.notes)}</textarea>`)}
+    <div id="ferr"></div>
+  </section>`,
+  // 4 비용
+  () => `<section class="panel">
+    <div class="q"><div class="step">4 / 4</div><h2>비용을 알려주세요</h2><p class="sub">모르는 항목은 비워두고 넘어가셔도 됩니다. 큰 금액은 만원 단위로 넣습니다.</p></div>
+    ${block('pluva iON 도입 비용', numField('init',{ph:'예: 1500', aria:'도입 비용(만원)'}), { hint:'견적을 받으셨다면 그 금액을 넣어주세요.' })}
+    ${block('1년 유지·운영비', numField('op',{ph:'예: 50', aria:'연간 유지비(만원)'}), { hint:'보정 신호 이용료, 점검비 등' })}
+    ${block('이 작업에 품삯을 주는 작업자는 몇 명인가요?', `${numField('workers',{ph:'0', aria:'고용 작업자 수'})}
+      <div class="sub-block" id="wageBox" ${num('workers') ? '' : 'hidden'}>${block('작업자 1명 시간당 품삯', numField('wage',{ph:'예: 15000', aria:'시간당 인건비'}), { tag:false, hint:'작업시간이 줄어드는 만큼 이 작업자들의 고용 시간도 준다고 보고 계산합니다.' })}</div>`, { hint:'없으면 비워두세요.' })}
+    ${block('운전은 직접(가족이) 하시나요?', `${yn('selfDrive', S.selfDrive)}${S.selfDrive ? `<div class="sub-block">${block('내 시간 1시간의 가치', numField('selfRate',{ph:'예: 15000', aria:'내 시간 1시간의 가치'}), { hint:'참고용입니다. 직접 일한 시간은 돈이 나가지 않으므로 현금 효과에는 넣지 않습니다.' })}</div>` : ''}`, { tag:false })}
+    ${block('겹치거나 빠뜨려서 다시 작업하는 곳이 있나요?', `${yn('rework', S.rework)}${S.rework ? `<div class="sub-block">
+      ${block('1년에 다시 작업하는 면적', `<div class="compare"><div><small>지금</small>${numField('reworkCur',{aria:'지금 재작업 면적'})}</div><div class="arrow" aria-hidden="true">→</div><div><small>pluva iON 사용 시 (예상)</small>${numField('reworkIon',{aria:'사용 후 재작업 면적'})}</div></div>`, { tag:false })}
+      ${block(`다시 작업할 때 드는 비용 (${S.unit}당)`, numField('reworkCost',{aria:'재작업 비용'}), { tag:false, hint:'연료·자재·작업비 등' })}
+      <label class="hint checkline"><input type="checkbox" data-flag="laborInRework" ${S.laborInRework?'checked':''}> 이 비용에 품삯이 포함되어 있어요. 같은 인건비가 두 번 계산되지 않도록, 위 품삯 작업자 수에는 재작업 인원을 넣지 마세요.</label>
+    </div>` : ''}`, { tag:false })}
+    ${block('남는 시간에 다른 작업을 더 맡을 계획이 있나요?', `${yn('extra', S.extra)}${S.extra ? `<div class="sub-block">
+      ${block('추가 작업으로 받을 금액 (1년)', numField('extraIncome',{aria:'추가 작업 수입(만원)'}), { tag:false })}
+      ${block('추가 작업에 드는 비용 (1년)', numField('extraCost',{aria:'추가 작업 비용(만원)'}), { tag:false })}
+    </div>` : ''}`, { tag:false, hint:'실제 계획이 있을 때만 넣어주세요. 시간이 남는 것만으로는 수익으로 보지 않습니다.' })}
+    <div id="ferr"></div>
+  </section>`,
+  // 5 결과
+  () => resultView(),
+];
+
+function resultView(){
+  const R = calc(), c = compat(), un = S.unit;
+  const savedTxt = R.saved === null ? '-' : R.saved >= 0 ? hours(R.saved) : `${hours(-R.saved)} 늘어남`;
+  const payTxt = { ok: R.years ? period(R.years) : '', noInit:'도입 비용을 넣으면 계산합니다', noNet:'비용 항목을 넣으면 계산합니다', neg:'현재 입력 조건에서는 현금 기준 회수 기간을 계산할 수 없습니다.' }[R.pay];
+  const row = (title, value, cls, basis, ref) => `<div class="drow"><h3>${title}${ref ? `<span class="ref">${ref}</span>` : ''}</h3><div class="val ${cls}">${value}</div>${basis ? `<p class="basis">${basis}</p>` : ''}</div>`;
+  const miss = '입력 안 함';
+  const kv = (k, v, small) => `<dt>${k}</dt><dd class="${v ? '' : 'empty'}">${v ? esc(v) : '입력 안 함'}${v && small ? `<small>${esc(small)}</small>` : ''}</dd>`;
+  const nv = (k, unit) => { const x = num(k); return x === null ? '' : `${comma(x)}${unit}`; };
+  return `<section class="panel">
+    <div class="q"><div class="step">계산 결과 · ${esc(label('machine'))} ${esc(label('task'))}</div><h2>내 농장 기준 예상 효과</h2></div>
+    ${c.ok ? '' : `<div class="notice check">호환 여부 확인 필요 · ${esc(c.why)} 정확한 적용 가능 여부는 기종과 작업 조건을 확인한 뒤 안내해드립니다.</div>`}
+    <div class="kpis">
+      <div class="kpi"><div class="v ${R.saved < 0 ? 'neg' : ''}">${savedTxt}</div><div class="k">1년에 줄어드는 작업시간</div></div>
+      <div class="kpi"><div class="v ${R.net === null ? 'na' : R.net < 0 ? 'neg' : ''}">${R.net === null ? '비용을 넣으면 계산합니다' : signed(R.net)}</div><div class="k">1년 현금 효과</div></div>
+      <div class="kpi"><div class="v ${R.pay === 'ok' ? '' : 'na'}">${payTxt}</div><div class="k">도입 비용 회수 기간</div></div>
+    </div>
+    <div class="detail">
+      ${row('1. 연간 예상 절감 작업시간', savedTxt + (R.days !== null ? ` (약 ${comma(r1(Math.abs(R.days)))}일)` : ''), R.saved < 0 ? 'neg' : 'pos', `입력하신 연간 작업 횟수와 1회 작업시간을 기준으로 계산했습니다. (${comma(R.cur)} − ${comma(R.ion)}시간) × ${comma(R.runs)}회${S.timeType ? ` · ${S.timeType}` : ''}`)}
+      ${row('2. 재작업 비용 변화', R.reSave !== null ? (R.reSave >= 0 ? `${won(R.reSave)} 절감` : `${won(-R.reSave)} 증가`) : R.reArea !== null ? `${comma(r1(R.reArea))}${un} 감소` : miss, R.reSave === null ? (R.reArea !== null ? '' : 'na') : (R.reSave < 0 ? 'neg' : 'pos'),
+        R.reArea !== null ? `(지금 ${comma(num('reworkCur'))} − 사용 후 ${comma(num('reworkIon'))}${un})${R.reSave !== null ? ` × ${un}당 ${comma(num('reworkCost'))}원` : ' · 비용을 넣으면 금액으로 계산합니다'}` : '')}
+      ${row('3. 실제 현금 기준 연간 순효과', R.net === null ? miss : signed(R.net), R.net === null ? 'na' : R.net < 0 ? 'neg' : 'pos',
+        `재작업 비용 절감 ${R.reSave !== null ? signed(R.reSave) : '(입력 안 함)'} + 품삯 절감 ${R.paidSave !== null ? signed(R.paidSave) : '(입력 안 함)'} − 유지·운영비 ${R.op !== null ? won(R.op) : '(입력 안 함)'}${R.paidHours !== null ? `. 품삯 절감은 줄어든 시간 ${hours(Math.max(0,R.saved))} × ${R.workers}명 기준` : ''}. 도입 비용은 아래 회수 기간에서 따로 봅니다.`)}
+      ${row('4. 직접 일한 시간의 가치', R.selfHours === null ? miss : R.selfValue !== null ? `${hours(R.selfHours)} · ${won(R.selfValue)} 상당` : hours(R.selfHours), R.selfHours === null ? 'na' : '', '현금이 나가지 않는 시간이라 현금 효과에는 넣지 않았습니다.', '참고값')}
+      ${R.extra !== null ? row('5. 추가 작업 순수익', signed(R.extra), R.extra < 0 ? 'neg' : 'pos', '추가 작업으로 받을 금액에서 드는 비용을 뺀 값입니다. 직접 일한 시간의 가치와 겹치지 않도록 따로 표시합니다.', '별도') : ''}
+      ${row('6. 도입 비용 회수 예상 기간', payTxt, R.pay === 'ok' ? '' : 'na', R.pay === 'ok' ? `도입 비용 ${won(R.init)} ÷ 연간 현금 효과 ${won(R.net)}` : '도입 비용 ÷ 현금 기준 연간 순효과로 계산합니다.')}
+    </div>
+    <div class="sum">
+      <h3>7. 계산에 사용한 입력 조건</h3>
+      <div class="sh"><b>선택</b><button type="button" class="link" data-go="1">수정</button></div>
+      <dl class="kv">${kv('농기계', label('machine'))}${kv('작물', label('crop'))}${kv('농작업', label('task'))}${kv('작업기', label('implement'))}
+        ${kv('농기계 모델', [S.text.machineMaker, S.text.machineModel].filter(Boolean).join(' '))}${kv('작업기 모델', [S.text.implMaker, S.text.implModel].filter(Boolean).join(' '))}${kv('작업기 폭', S.text.width)}</dl>
+      <div class="sh"><b>작업</b><button type="button" class="link" data-go="2">수정</button></div>
+      <dl class="kv">${kv('1회 작업 면적', nv('area', un))}${kv('연간 작업 횟수', nv('runs','회'))}${kv('1회 작업시간 (지금 → iON)', R.cur !== null && R.ion !== null ? `${comma(R.cur)} → ${comma(R.ion)}시간` : '', S.timeType || '')}${kv('하루 작업시간', nv('dayHours','시간'))}${kv('메모', S.text.notes.trim())}</dl>
+      <div class="sh"><b>비용</b><button type="button" class="link" data-go="3">수정</button></div>
+      <dl class="kv">${kv('도입 비용', nv('init','만원'))}${kv('연간 유지·운영비', nv('op','만원'))}${kv('품삯 작업자', nv('workers','명'))}${kv('시간당 품삯', num('workers') ? nv('wage','원') : '')}${kv('내 시간 가치', S.selfDrive ? nv('selfRate','원') : '')}
+        ${S.rework ? kv('재작업 면적 (지금 → iON)', num('reworkCur') !== null && num('reworkIon') !== null ? `${comma(num('reworkCur'))} → ${comma(num('reworkIon'))}${un}` : '') + kv(`재작업 비용 (${un}당)`, nv('reworkCost','원')) : ''}
+        ${S.extra ? kv('추가 작업 수입', nv('extraIncome','만원')) + kv('추가 작업 비용', nv('extraCost','만원')) : ''}</dl>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn small" id="copyBtn">결과 복사</button>
+      <button type="button" class="btn small" id="resetBtn">처음부터 다시</button>
+    </div>
+    <p class="toast" id="toast" aria-live="polite"></p>
+    <div id="resetBox"></div>
+    <textarea id="copyFallback" class="text" readonly hidden style="min-height:200px;max-width:none"></textarea>
+  </section>`;
+}
+function copyText(){
+  const R = calc(), c = compat(), L = [];
+  L.push('[pluva iON 효과 계산 결과]');
+  L.push(`${label('machine')} / ${label('crop')} / ${label('task')} / ${label('implement')} (${c.ok ? '확인 목록 조합' : '호환 여부 확인 필요'})`);
+  L.push(`면적 ${num('area') ?? '-'}${S.unit}, 연 ${R.runs}회, 1회 ${R.cur} → ${R.ion}시간`);
+  L.push(`연간 절감 작업시간: ${R.saved >= 0 ? hours(R.saved) : hours(-R.saved)+' 늘어남'}`);
+  L.push(`1년 현금 효과: ${R.net === null ? '계산 안 함(비용 미입력)' : signed(R.net)}`);
+  L.push(`회수 기간: ${R.pay === 'ok' ? period(R.years) : R.pay === 'neg' ? '현재 입력 조건에서는 계산할 수 없음' : '계산 안 함'}`);
+  if (R.extra !== null) L.push(`추가 작업 순수익(별도): ${signed(R.extra)}`);
+  if (S.text.notes.trim()) L.push(`메모: ${S.text.notes.trim()}`);
+  L.push('※ 입력값만으로 계산한 참고 결과입니다.');
+  return L.join('\n');
+}
+
+/* =====================================================================
+   렌더링·이동
+   ===================================================================== */
+const STEP_KEYS = { 2:['area','runs','cur','ion','dayHours'], 3:['init','op','workers','wage','selfRate','reworkCur','reworkIon','reworkCost','extraIncome','extraCost'] };
+function stepFieldError(step){
+  return (STEP_KEYS[step] || []).find(k => { const shown = !!document.getElementById('f-'+k) || S.step !== step; if (!shown && !FIELDS[k].req) return false; return check(k, true)?.lv === 'error'; });
+}
+function valid(step){
+  const sel = S.sel, ok = k => sel[k] && (sel[k] !== 'other' || sel[k+'Custom'].trim());
+  if (step === 0) return !!ok('machine');
+  if (step === 1) return !!(ok('crop') && ok('task') && ok('implement'));
+  if (step === 2) return !['area','runs','cur','ion','dayHours'].some(k => check(k, true)?.lv === 'error');
+  if (step === 3) return !stepFieldError(3);
+  return true;
+}
+function renderProgress(){
+  $('#progress').innerHTML = STEPS.map((s,i) => `<button type="button" class="${i===S.step?'cur':i<=S.maxStep?'done':''}" ${i<=S.maxStep && i!==S.step ? `data-go="${i}"` : 'disabled'} aria-current="${i===S.step?'step':'false'}"><span class="bar"></span><span class="lbl">${s}</span></button>`).join('');
+}
+function renderNav(){
+  const last = S.step === STEPS.length-1;
+  $('#nav').innerHTML = last ? `<button type="button" class="btn primary" data-go="2">입력값 고치기</button>`
+    : `${S.step ? '<button type="button" class="btn" id="prevBtn">이전</button>' : ''}<button type="button" class="btn primary" id="nextBtn">${S.step === 3 ? '결과 보기' : '다음'}</button>`;
+}
+function renderPreview(){
+  const el = $('#preview'); if (S.step < 2 || S.step === 4){ el.innerHTML = ''; return; }
+  const R = calc(), parts = [];
+  if (R.saved !== null && isFinite(R.saved)) parts.push(`<span>연간 절감<b>${R.saved >= 0 ? hours(R.saved) : '−'+hours(-R.saved)}</b></span>`);
+  if (S.step === 3 && R.net !== null) parts.push(`<span>1년 현금 효과<b>${signed(R.net)}</b></span>`);
+  el.innerHTML = parts.join('');
+}
+function render(top){
+  $('#app').innerHTML = VIEWS[S.step]();
+  renderProgress(); renderNav(); renderPreview();
+  (STEP_KEYS[S.step] || []).forEach(paint);
+  if (top) window.scrollTo({ top:0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+function next(){
+  if (!valid(S.step)){
+    S.tried[S.step] = true; (STEP_KEYS[S.step] || []).forEach(paint);
+    const msg = S.step === 0 ? '농기계를 골라주세요. 직접 입력을 고르셨다면 이름도 적어주세요.' : S.step === 1 ? '작물, 농작업, 작업기를 하나씩 골라주세요. 직접 입력을 고르셨다면 이름도 적어주세요.' : '빨간색으로 표시된 칸을 확인해 주세요.';
+    const fe = $('#ferr'); if (fe) fe.innerHTML = `<p class="form-error" role="alert">${msg}</p>`;
+    const bad = stepFieldError(S.step); if (bad) document.getElementById('f-'+bad)?.focus();
+    return;
+  }
+  S.step++; S.maxStep = Math.max(S.maxStep, S.step); save(); render(true);
+}
+function syncWage(){ const b = document.getElementById('wageBox'); if (b) b.hidden = !num('workers'); }
+function go(i){ S.step = i; save(); render(true); }
+function prune(){
+  const m = machine(); if (!m){ S.sel.crop = S.sel.task = S.sel.implement = null; return; }
+  if (S.sel.crop && S.sel.crop !== 'other' && !m.crops.includes(S.sel.crop)) S.sel.crop = null;
+  if (S.sel.task && S.sel.task !== 'other' && !taskOptions().includes(S.sel.task)) S.sel.task = null;
+  if (S.sel.implement && S.sel.implement !== 'other' && !m.implements.includes(S.sel.implement)) S.sel.implement = null;
+  if (!valid(1) && S.maxStep > 1) S.maxStep = 1;
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.pick){
+    const k = t.dataset.pick, id = t.dataset.id; S.sel[k] = id;
+    if (k === 'machine'){ prune(); const m = machine();
+      if (m && m.crops.length === 1 && !S.sel.crop) S.sel.crop = m.crops[0];
+      if (m && m.tasks.length === 1 && !S.sel.task) S.sel.task = m.tasks[0];
+      if (m && m.implements.length === 1 && !S.sel.implement) S.sel.implement = m.implements[0]; }
+    if (k === 'crop') prune();
+    if (k === 'task'){ const pref = CATALOG.tasks[id]?.implements || []; if (pref.length === 1 && S.sel.implement !== 'other') S.sel.implement = pref[0]; }
+    save(); render(false);
+    if (id === 'other') document.getElementById('c-'+k)?.focus();
+    else if (k === 'machine') setTimeout(next, 150);
+    return;
+  }
+  if (t.dataset.seg){ const n = t.dataset.seg, v = t.dataset.v;
+    if (n === 'unit'){ S.unit = v; save(); render(false); }
+    else { S[n] = S[n] === v ? null : v; save(); t.parentElement.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(S[n] === b.dataset.v))); }
+    return; }
+  if (t.dataset.yn){ S[t.dataset.yn] = t.dataset.v === '1'; save(); render(false); return; }
+  if (t.dataset.stepper){ const k = t.dataset.stepper, f = FIELDS[k], cur = num(k) || 0;
+    S.v[k] = String(Math.max(0, r1(cur + Number(t.dataset.d)*f.step))); save();
+    const inp = document.getElementById('f-'+k); if (inp) inp.value = S.v[k]; syncWage(); (STEP_KEYS[S.step]||[]).forEach(paint); renderPreview(); return; }
+  if (t.dataset.go !== undefined){ go(Number(t.dataset.go)); return; }
+  if (t.id === 'nextBtn') return next();
+  if (t.id === 'prevBtn') return go(S.step-1);
+  if (t.id === 'resetBtn'){ $('#resetBox').innerHTML = `<div class="confirm" role="alertdialog"><p>입력한 내용이 모두 지워집니다. 처음부터 다시 할까요?</p><div class="actions"><button type="button" class="btn small" id="resetYes">지우고 처음부터</button><button type="button" class="btn small" id="resetNo">취소</button></div></div>`; return; }
+  if (t.id === 'resetNo'){ $('#resetBox').innerHTML = ''; return; }
+  if (t.id === 'resetYes'){ S = blank(); try { localStorage.removeItem(STORE_KEY); } catch(_){} render(true); return; }
+  if (t.id === 'copyBtn'){ const text = copyText(), toast = $('#toast');
+    const fb = () => { const ta = $('#copyFallback'); ta.hidden = false; ta.value = text; ta.focus(); ta.select(); toast.textContent = '아래 내용을 길게 눌러 복사해 주세요.'; };
+    try { navigator.clipboard.writeText(text).then(() => { toast.textContent = '결과를 복사했습니다.'; }, fb); } catch(_){ fb(); } }
+});
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.key){ S.v[t.dataset.key] = t.value; save(); syncWage(); (STEP_KEYS[S.step]||[]).forEach(paint); renderPreview(); const fe = $('#ferr'); if (fe) fe.innerHTML = ''; }
+  else if (t.dataset.text){ S.text[t.dataset.text] = t.value; save(); }
+  else if (t.dataset.custom){ S.sel[t.dataset.custom+'Custom'] = t.value; save(); const fe = $('#ferr'); if (fe) fe.innerHTML = ''; }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.flag){ S[t.dataset.flag] = t.checked; save(); }
+});
+document.addEventListener('focusout', e => {
+  const k = e.target.dataset?.key; if (!k || !FIELDS[k].won) return;
+  const p = parse(e.target.value); if (p.ok && p.v !== null && p.v >= 0){ e.target.value = comma(p.v); S.v[k] = e.target.value; save(); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')){ e.preventDefault(); next(); } });
+
+(function init(){ prune(); for (let i=0;i<S.step;i++){ if (!valid(i)){ S.step = i; break; } } S.maxStep = Math.max(S.maxStep, S.step); render(false); })();
+</script>
+</body>
+</html>
